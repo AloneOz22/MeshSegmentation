@@ -1,0 +1,90 @@
+﻿<Window x:Class="WpfApp.MainWindow"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:opentk="clr-namespace:OpenTK;assembly=OpenTK.GLControl"
+        xmlns:local="clr-namespace:WpfApp"
+        mc:Ignorable="d"
+        Title="Converter" Height="630" Width="840">
+    <Grid Background="Gray">
+        <Grid Background="Gray" HorizontalAlignment="Left" Height="477" VerticalAlignment="Top" Width="403">
+            <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Left" Height="477" VerticalAlignment="Top" Width="393">
+                <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Left" Height="63" Margin="278.2,103.2,0,0" VerticalAlignment="Top" Width="104"/>
+            </Border>
+            <Button Name="btnOpenSegmentedScans" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="234,84,0,0" Click="btnOpenSegmentedScans_Click" Height="25" Foreground="Black" Background="White" RenderTransformOrigin="0.587,-0.252" >Path</Button>
+            <Button Name="btnOpenScans" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="234,26,0,0" Click="btnOpenScans_Click" Height="25" Foreground="Black" Background="White" RenderTransformOrigin="0.587,-0.252" >Path</Button>
+            <Button Name="btnSaveScans" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="234,142,0,0" Click="btnSaveScans_Click" Height="25" Foreground="Black" Background="White" RenderTransformOrigin="0.542,1.764">Path</Button>
+            <Button Name="btnSaveGeo" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="234,183,0,0" Click="btnSaveGeo_Click" Height="25" Foreground="Black" Background="White" RenderTransformOrigin="0.542,1.764">Path</Button>
+            <Button Name="btnSaveMeshes" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="234,387,0,0" Click="btnSaveMeshes_Click" Height="25" Foreground="Black" Background="White" RenderTransformOrigin="0.598,0.072">Path</Button>
+            <Button Name="btnOpenMesh" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="234,271,0,0" Click="btnOpenMeshes_Click" Height="25" Foreground="Black" Background="White" RenderTransformOrigin="0.496,5.656">Path</Button>
+            <TextBlock HorizontalAlignment="Left" Width="50" TextWrapping="NoWrap" Text="Scan list" VerticalAlignment="Top" Margin="20,10,0,0" RenderTransformOrigin="0.526,1.581"/>
+            <TextBlock HorizontalAlignment="Left" Width="110" TextWrapping="NoWrap" Text="Segmented scan list" VerticalAlignment="Top" Margin="20,68,0,0" RenderTransformOrigin="0.435,-1.244"/>
+            <TextBlock HorizontalAlignment="Left" Width="176" TextWrapping="NoWrap" Text="Directory for segmented meshes" VerticalAlignment="Top" Margin="20,371,0,0"/>
+            <TextBlock HorizontalAlignment="Left" Width="110" TextWrapping="NoWrap" Text="Segmented mesh list" VerticalAlignment="Top" Margin="20,313,0,0"/>
+            <TextBlock HorizontalAlignment="Left" Width="50" TextWrapping="NoWrap" Text="Mesh list" VerticalAlignment="Top" Margin="20,255,0,0" RenderTransformOrigin="0.526,-2.631"/>
+            <ListBox Name="ImagesList" HorizontalAlignment="Left" Width="200" Height="42" VerticalAlignment="Top" Margin="20,26,0,0" Background="White" SelectionChanged="ImagesList_SelectionChanged">
+
+            </ListBox>
+            <ListBox Name="SegmentedImagesList" HorizontalAlignment="Left" Width="200" Height="42" VerticalAlignment="Top" Margin="20,84,0,0" Background="White" SelectionChanged="SegmentedImagesList_SelectionChanged">
+
+            </ListBox>
+            <ListBox Name="SegmentedMeshesList" HorizontalAlignment="Left" Width="200" Height="42" VerticalAlignment="Top" Margin="20,329,0,0" Background="White" RenderTransformOrigin="0.504,-0.64">
+
+            </ListBox>
+            <ListBox Name="MeshesList" HorizontalAlignment="Left" Width="200" Height="42" VerticalAlignment="Top" Margin="20,271,0,0" Background="White" RenderTransformOrigin="0.516,0.9">
+            </ListBox>
+            <TextBlock HorizontalAlignment="Left" Width="163" TextWrapping="NoWrap" Text="Directory for segmented scans" VerticalAlignment="Top" Margin="20,126,0,0" RenderTransformOrigin="0.456,-2.494"/>
+            <TextBlock HorizontalAlignment="Left" Width="163" TextWrapping="NoWrap" Text="Directory for geometry files" VerticalAlignment="Top" Margin="20,167,0,0" RenderTransformOrigin="0.456,-2.494"/>
+            <TextBox x:Name="scans_path" HorizontalAlignment="Left" Height="25" TextWrapping="Wrap" Text="" VerticalAlignment="Top" Width="200" Margin="20,142,0,0" Background="White" materialDesign:HintAssist.Hint="Enter result scans directory here"/>
+            <TextBox x:Name="geometry_path" HorizontalAlignment="Left" Height="25" TextWrapping="Wrap" Text="" VerticalAlignment="Top" Width="200" Margin="20,183,0,0" Background="White" materialDesign:HintAssist.Hint="Enter new geometry directory here"/>
+            <TextBox x:Name="meshes_path" HorizontalAlignment="Left" Height="25" TextWrapping="Wrap" Text="" VerticalAlignment="Top" Width="200" Margin="20,387,0,0" Background="White" materialDesign:HintAssist.Hint="Enter result meshes directory here"/>
+            <Button x:Name="convert_button" Content="Scans segmentation" HorizontalAlignment="Left" Margin="20,438,0,0" VerticalAlignment="Top" Width="121" Foreground="Black" Background="White" Click="convert_button_Click"/>
+            <Button x:Name="mesh_button" Content="Meshes segmentation" HorizontalAlignment="Right" Margin="0,438,20,0" VerticalAlignment="Top" Width="121" Foreground="Black" Background="White" Click="mesh_button_Click" RenderTransformOrigin="0.469,-0.677"/>
+            <TextBlock HorizontalAlignment="Left" Width="50" TextWrapping="Wrap" Text="Scopes" VerticalAlignment="Top" Margin="20,213,0,0" Height="18" RenderTransformOrigin="0.574,5.361"/>
+            <TextBox Name="LowScope" HorizontalAlignment="Left" Height="23" Margin="20,232,0,0" TextWrapping="Wrap" Text="0" VerticalAlignment="Top" Width="30" RenderTransformOrigin="0.637,4.27"/>
+            <TextBox Name="MidScope"  HorizontalAlignment="Left" Height="23" Margin="55,232,0,0" TextWrapping="Wrap" Text="35" VerticalAlignment="Top" Width="30" RenderTransformOrigin="0.743,4.009"/>
+            <TextBox Name="TopScope" HorizontalAlignment="Left" Height="23" Margin="90,232,0,0" TextWrapping="Wrap" Text="155" VerticalAlignment="Top" Width="30" RenderTransformOrigin="0.597,2.704"/>
+            <TextBlock HorizontalAlignment="Right" Width="56" TextWrapping="NoWrap" Text="Geometry" VerticalAlignment="Top" Margin="0,105,43,0" RenderTransformOrigin="0.456,-2.494" Height="16"/>
+            <TextBlock HorizontalAlignment="Right" Width="41" TextWrapping="NoWrap" Text="Radius" VerticalAlignment="Top" Margin="0,121,81,0" RenderTransformOrigin="0.456,-2.494" Height="16"/>
+            <TextBlock HorizontalAlignment="Right" Width="39" TextWrapping="NoWrap" Text="Height" VerticalAlignment="Top" Margin="0,121,22,0" RenderTransformOrigin="0.456,-2.494" Height="16"/>
+            <TextBox x:Name="radius" HorizontalAlignment="Right" Height="25" TextWrapping="Wrap" Text="" VerticalAlignment="Top" Width="41" Margin="0,137,81,0" Background="White"/>
+            <TextBox x:Name="height" HorizontalAlignment="Right" Height="25" TextWrapping="Wrap" Text="" VerticalAlignment="Top" Width="41" Margin="0,137,22,0" Background="White"/>
+            <TextBlock x:Name="num_of_scans" HorizontalAlignment="Right" Width="100" TextWrapping="NoWrap" Text="Elements:" VerticalAlignment="Top" Margin="0,10,22,0" RenderTransformOrigin="0.456,-2.494" Height="17"/>
+            <TextBlock x:Name="num_of_geometries" HorizontalAlignment="Right" Width="100" TextWrapping="NoWrap" Text="Elements:" VerticalAlignment="Top" Margin="0,271,20,0" RenderTransformOrigin="0.456,-2.494" Height="17"/>
+            <StackPanel x:Name="stackPanel">
+                <RadioButton x:Name="Cube" GroupName="Languages" Content="Cube" IsChecked="True" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="280,170,0,0" Height="16" Checked="Cube_Checked"/>
+                <RadioButton x:Name="Cylinder" GroupName="Languages" Content="Cylinder" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="280,0,0,0" Height="17" Checked="Cylinder_Checked"/>
+            </StackPanel>
+        </Grid>
+        <Grid Background="Gray" HorizontalAlignment="Left" Height="124" VerticalAlignment="Bottom" Width="403" Margin="0,0,0,-0.2">
+            <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Left" Height="124" VerticalAlignment="Bottom" Width="393">
+                <TextBlock x:Name="Console_block" Background="White" TextWrapping="Wrap" Text="Console" HorizontalAlignment="Left" Height="122" VerticalAlignment="Bottom" Width="392" Margin="0.2,0,-1,0.2"/>
+            </Border>
+        </Grid>
+        <Grid x:Name="image_grid" Background="Gray" HorizontalAlignment="Right" Height="601" VerticalAlignment="Bottom" Width="432" Margin="0,0,-0.4,-0.2">
+            <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Left" Height="581" VerticalAlignment="Bottom" Width="412" Margin="10,0,0,10">
+                <TabControl >
+                    <TabItem Header="Segmented">
+                        <Grid Background="Gray">
+                            <Image x:Name ="CT_Scan" />
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="Original">
+                        <Grid Background="Gray">
+                            <Image x:Name ="CT_Scan_Orig"/>
+                        </Grid>
+                    </TabItem>
+                    <!--<TabItem Header="grid">
+                        <Grid>
+                            <WindowsFormsHost Initialized="WindowsFormsHost_Initialized">
+                                <opentk:GLControl x:Name="glControl" Load="glControl_Load" Paint="glControl_Paint" KeyDown="glControl_KeyDown" MouseWheel="glControl_MouseWheel"/>
+                            </WindowsFormsHost>
+                        </Grid>
+                    </TabItem>-->
+                </TabControl>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
