@@ -22,6 +22,7 @@ using OpenTK;
 using OpenTK.Graphics;
 using OpenTK.Graphics.OpenGL;
 using System.Windows.Forms;
+using System.ComponentModel;
 
 namespace WpfApp
 {
@@ -31,12 +32,22 @@ namespace WpfApp
     
     public partial class MainWindow : System.Windows.Window
     {
+        StreamReader Fin;
+        List<Node> Nodes;
+        List<Element> Elements;
+        int nodeNum;
+        int elementNum;
+        int Lowscope;
+        int Midscope;
+        int Topscope;
+        int oldCount;
+        string scansPath;
         const double EPS = 0.00000000000001;
         public MainWindow()
         {
             InitializeComponent();
             Console_block.Text = "Ready";
-        }
+        }        
         private void Cube_Checked(object sender, RoutedEventArgs e)
         {
             System.Windows.Controls.RadioButton pressed = (System.Windows.Controls.RadioButton)sender;
@@ -45,16 +56,72 @@ namespace WpfApp
         {
             System.Windows.Controls.RadioButton pressed = (System.Windows.Controls.RadioButton)sender;
         }
+        void SegmentationOfScan(int i)
+        {
+            string fileName = (string)ImagesList.Items[i];
+            Mat img1 = new Mat(fileName);
+            Mat hsv = new Mat(img1.Cols, img1.Rows, 8, 3);
+            Cv2.CvtColor(img1, hsv, ColorConversionCodes.BGR2HSV);
+            Mat[] splitedHsv = new Mat[3];
+            Cv2.Split(hsv, out splitedHsv);
+            //CT_Scan_Orig.Source = BitmapFrame.Create(new Uri(fileName));
+            for (int x = 0; x < hsv.Rows; x++)
+            {
+                for (int y = 0; y < hsv.Cols; y++)
+                {
+                    int H = (int)(splitedHsv[0].At<byte>(x, y));        // Тон
+                    int S = (int)(splitedHsv[1].At<byte>(x, y));        // Интенсивность
+                    int V = (int)(splitedHsv[2].At<byte>(x, y));        // Яркость
+                    if (V >= Lowscope && V < Midscope)
+                    {
+                        img1.At<Vec3b>(x, y)[0] = 0;
+                        img1.At<Vec3b>(x, y)[1] = 0;
+                        img1.At<Vec3b>(x, y)[2] = 0;
+                    }
+                    else
+                        if (V >= Midscope && V < Topscope)
+                    {
+                        img1.At<Vec3b>(x, y)[0] = 150;
+                        img1.At<Vec3b>(x, y)[1] = 150;
+                        img1.At<Vec3b>(x, y)[2] = 150;
+                    }
+                    else
+                    {
+                        img1.At<Vec3b>(x, y)[0] = 255;
+                        img1.At<Vec3b>(x, y)[1] = 255;
+                        img1.At<Vec3b>(x, y)[2] = 255;
+                    }
+                }
+            }
+            Cv2.ImWrite(scansPath + @"\res" + i + ".tif", img1);           
+        }
+        void ParallelSegmentation()
+        {
+            try
+            {
+                scansPath = scans_path.Text;
+                Lowscope = Convert.ToInt32(LowScope.Text);
+                Midscope = Convert.ToInt32(MidScope.Text);
+                Topscope = Convert.ToInt32(TopScope.Text);
+                Parallel.For(0, ImagesList.Items.Count, SegmentationOfScan);
+                for(int i = 0; i < ImagesList.Items.Count; i++)
+                {
+                    CT_Scan.Source = BitmapFrame.Create(new Uri((String)scans_path.Text + @"\res" + i + ".tif"));
+                    SegmentedImagesList.Items.Add(scans_path.Text + @"\res" + i + ".tif");
+                    Console_block.Text += "\nNew scan segmented";
+                    num_of_scans.Text = "Elements: " + Convert.ToString(ImagesList.Items.Count);
+                }
+            }
+            catch(Exception e)
+            {
+                System.Windows.MessageBox.Show("Error! " + e.Message);
+            }
+        }
         void segmentation()
         {
             try
             {
                 SegmentedImagesList.Items.Clear();
-                //CT_Scan.Source = BitmapFrame.Create(new Uri((String)ImagesList.Items[0]));
-                //StreamWriter fout = new StreamWriter(data_path.Text);
-                //fout.WriteLine("Сюда записались какие-то данные, но я пока не знаю как их вычленить");
-                //fout.Close();
-                //Console_block.Text += "\nНовое изображение загружено";
                 int k = 0;
                 foreach (string fileName in ImagesList.Items)
                 {
@@ -109,7 +176,7 @@ namespace WpfApp
         {
             try
             {
-                string alpha = "0.002";
+                string alpha = "0.001";
                 StreamWriter fout = new StreamWriter(geometry_path.Text + @"\res" + ".geo");
                 height.Text = height.Text.Replace('.', ',');
                 radius.Text = radius.Text.Replace('.', ',');
@@ -139,48 +206,201 @@ namespace WpfApp
                 System.Windows.MessageBox.Show("Error! " + e.Message);
             }
         }
+        void NodesReading(int i)
+        {
+            string cycleHelpString = Fin.ReadLine();
+            string[] Subs = cycleHelpString.Split(' ');
+            Subs[1] = Subs[1].Replace('.', ',');
+            Subs[2] = Subs[2].Replace('.', ',');
+            Subs[3] = Subs[3].Replace('.', ',');
+            Nodes.Add(new Node(Convert.ToInt32(Subs[0]), Convert.ToDouble(Subs[1]), Convert.ToDouble(Subs[2]), Convert.ToDouble(Subs[3])));
+        }
+        void ElementsReading(int i)
+        {
+            string[] Subs = Fin.ReadLine().Split(' ');
+            switch (Convert.ToInt32(Subs[1]))
+            {
+                case 1:
+                    Elements.Add(new Element(Nodes[Convert.ToInt32(Subs[5]) - 1], Nodes[Convert.ToInt32(Subs[6]) - 1], i + 1));
+                    break;
+                case 2:
+                    Elements.Add(new Element(Nodes[Convert.ToInt32(Subs[5]) - 1], Nodes[Convert.ToInt32(Subs[6]) - 1], Nodes[Convert.ToInt32(Subs[7]) - 1], i + 1));
+                    break;
+                case 15:
+                    Elements.Add(new Element(Nodes[Convert.ToInt32(Subs[5]) - 1], i + 1));
+                    break;
+            }
+        }
+        void AddLayer(int i)
+        {
+            switch (Elements[i - elementNum].Type)
+            {
+                case 1:
+                    Elements.Add(new Element(Nodes[Elements[i - elementNum].FirstNode.Num + nodeNum - 1], Nodes[Elements[i - elementNum].SecondNode.Num + nodeNum - 1], i + 1));
+                    break;
+                case 2:
+                    Elements.Add(new Element(Nodes[Elements[i - elementNum].FirstNode.Num + nodeNum - 1], Nodes[Elements[i - elementNum].SecondNode.Num + nodeNum - 1], Nodes[Elements[i - elementNum].ThirdNode.Num + nodeNum - 1], i + 1));
+                    break;
+                case 15:
+                    Elements.Add(new Element(Nodes[Elements[i - elementNum].FirstNode.Num + nodeNum - 1], i + 1));
+                    break;
+            }
+        }
+        void NodeTagsReading(int i)
+        {
+            switch (Elements[i].Type)
+            {
+                case 15:
+                    switch (Elements[i].Tag)
+                    {
+                        case 0:
+                            Elements[i].FirstNode.TagCounter[0]++;
+                            break;
+                        case 1:
+                            Elements[i].FirstNode.TagCounter[1]++;
+                            break;
+                        case 2:
+                            Elements[i].FirstNode.TagCounter[2]++;
+                            break;
+                    }
+                    break;
+                case 1:
+                    switch (Elements[i].Tag)
+                    {
+                        case 0:
+                            Elements[i].FirstNode.TagCounter[0]++;
+                            Elements[i].SecondNode.TagCounter[0]++;
+                            break;
+                        case 1:
+                            Elements[i].FirstNode.TagCounter[1]++;
+                            Elements[i].SecondNode.TagCounter[1]++;
+                            break;
+                        case 2:
+                            Elements[i].FirstNode.TagCounter[2]++;
+                            Elements[i].SecondNode.TagCounter[2]++;
+                            break;
+                    }
+                    break;
+                case 2:
+                    switch (Elements[i].Tag)
+                    {
+                        case 0:
+                            Elements[i].FirstNode.TagCounter[0]++;
+                            Elements[i].SecondNode.TagCounter[0]++;
+                            Elements[i].ThirdNode.TagCounter[0]++;
+                            break;
+                        case 1:
+                            Elements[i].FirstNode.TagCounter[1]++;
+                            Elements[i].SecondNode.TagCounter[1]++;
+                            Elements[i].ThirdNode.TagCounter[1]++;
+                            break;
+                        case 2:
+                            Elements[i].FirstNode.TagCounter[2]++;
+                            Elements[i].SecondNode.TagCounter[2]++;
+                            Elements[i].ThirdNode.TagCounter[2]++;
+                            break;
+                    }
+                    break;
+            }
+        }
+        void NodeTagsRewriting(int i)
+        {
+            if (Nodes[i].TagCounter[0] > Nodes[i].TagCounter[1] && Nodes[i].TagCounter[0] > Nodes[i].TagCounter[2])
+            {
+                Nodes[i].Tag = 0;
+            }
+            else if (Nodes[i].TagCounter[1] > Nodes[i].TagCounter[0] && Nodes[i].TagCounter[1] > Nodes[i].TagCounter[2])
+            {
+                Nodes[i].Tag = 1;
+            }
+            else if (Nodes[i].TagCounter[2] > Nodes[i].TagCounter[0] && Nodes[i].TagCounter[2] > Nodes[i].TagCounter[1])
+            {
+                Nodes[i].Tag = 2;
+            }
+            else if (Nodes[i].TagCounter[0] == Nodes[i].TagCounter[1] && Nodes[i].TagCounter[0] > Nodes[i].TagCounter[2])
+            {
+                Nodes[i].Tag = 1; // Граница 1 и 2 фаз
+            }
+            else if (Nodes[i].TagCounter[0] == Nodes[i].TagCounter[2] && Nodes[i].TagCounter[0] > Nodes[i].TagCounter[1])
+            {
+                Nodes[i].Tag = 2; // Граница 1 и 3 фаз
+            }
+            else if (Nodes[i].TagCounter[1] == Nodes[i].TagCounter[2] && Nodes[i].TagCounter[1] > Nodes[i].TagCounter[0])
+            {
+                Nodes[i].Tag = 2; // Граница 2 и 3 фаз
+            }
+            else
+            {
+                Nodes[i].Tag = 0; // Граница всех фаз
+            }
+        }
+        void TetrahedronsCreating(int i)
+        {
+            if (Elements[i].Tag == Elements[i - elementNum].Tag && Elements[i].Type == 2 && Elements[i - elementNum].Type == 2)
+            {
+                //Elements.Capacity += 3;
+                Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i].Tag));
+                Elements.Add(new Element(Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i].ThirdNode, Elements.Count, Elements[i].Tag));
+                Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i].Tag));
+            }
+            else if (Elements[i].Tag != Elements[i - elementNum].Tag && Elements[i].Type == 2 && Elements[i - elementNum].Type == 2)
+            {
+                List<bool> ThisNodesTags = new List<bool>(3);
+                if (Elements[i].FirstNode.Tag == Elements[i].Tag)
+                {
+                    ThisNodesTags.Add(true);
+                }
+                else
+                {
+                    ThisNodesTags.Add(false);
+                }
+                if (Elements[i].SecondNode.Tag == Elements[i].Tag)
+                {
+                    ThisNodesTags.Add(true);
+                }
+                else
+                {
+                    ThisNodesTags.Add(false);
+                }
+                if (Elements[i].ThirdNode.Tag == Elements[i].Tag)
+                {
+                    ThisNodesTags.Add(true);
+                }
+                else
+                {
+                    ThisNodesTags.Add(false);
+                }
+                NewTetrahedron(ref Elements, TetrahedronsConfiguration(ThisNodesTags), i, elementNum);
+            }
+        }
         void LayerMeshCreating()
         {
             try
             {
-                StreamReader Fin = new StreamReader((string)MeshesList.Items[0]);
+
+                Fin = new StreamReader((string)MeshesList.Items[0]);
                 string HelpString = "";
                 do
                 {
                     HelpString = Fin.ReadLine();
                 } while (HelpString != "$Nodes");
                 HelpString = Fin.ReadLine();
-                int nodeNum = Convert.ToInt32(HelpString);
-                List<Node> Nodes = new List<Node>(nodeNum);               
+                nodeNum = Convert.ToInt32(HelpString);
+                Nodes = new List<Node>(nodeNum);
+                //Parallel.For(0, Nodes.Capacity - 1, NodesReading);
                 for (int i = 0; i < Nodes.Capacity; i++)
                 {
-                    HelpString = Fin.ReadLine();
-                    string[] Subs = HelpString.Split(' ');
-                    Subs[1] = Subs[1].Replace('.', ',');
-                    Subs[2] = Subs[2].Replace('.', ',');
-                    Subs[3] = Subs[3].Replace('.', ',');
-                    Nodes.Add(new Node(Convert.ToInt32(Subs[0]), Convert.ToDouble(Subs[1]), Convert.ToDouble(Subs[2]), Convert.ToDouble(Subs[3])));                                     
+                    NodesReading(i);
                 }
                 Fin.ReadLine();
                 Fin.ReadLine();
-                int elementNum = Convert.ToInt32(Fin.ReadLine());
-                List<Element> Elements = new List<Element>(elementNum);
+                elementNum = Convert.ToInt32(Fin.ReadLine());
+                Elements = new List<Element>(elementNum);
+                //Parallel.For(0, elementNum, ElementsReading);
                 for (int i = 0; i < elementNum; i++)
                 {
-                    string[] Subs = Fin.ReadLine().Split(' ');
-                    switch (Convert.ToInt32(Subs[1]))
-                    {
-                        case 1:
-                            Elements.Add(new Element(Nodes[Convert.ToInt32(Subs[5]) - 1], Nodes[Convert.ToInt32(Subs[6]) - 1], i + 1));
-                            break;
-                        case 2:
-                            Elements.Add(new Element(Nodes[Convert.ToInt32(Subs[5]) - 1], Nodes[Convert.ToInt32(Subs[6]) - 1], Nodes[Convert.ToInt32(Subs[7]) - 1], i + 1));
-                            break;
-                        case 15:
-                            Elements.Add(new Element(Nodes[Convert.ToInt32(Subs[5]) - 1], i + 1));
-                            break;
-                    }
-                }                              
+                    ElementsReading(i);                   
+                }
                 Fin.Close();
                 int k = 0;
                 height.Text = height.Text.Replace('.', ',');
@@ -195,21 +415,11 @@ namespace WpfApp
                     }
                     Nodes.Add(new Node(i + 1, Nodes[i - nodeNum].X, Nodes[i - nodeNum].Y, Height / SegmentedImagesList.Items.Count * k));                    
                 }
+                //Parallel.For(elementNum, Elements.Capacity, AddLayer);
                 for (int i = elementNum; i < Elements.Capacity; i++)
-                {                    
-                    switch (Elements[i - elementNum].Type)
-                    {
-                        case 1:
-                            Elements.Add(new Element(Nodes[Elements[i - elementNum].FirstNode.Num + nodeNum - 1], Nodes[Elements[i - elementNum].SecondNode.Num + nodeNum - 1], i + 1));
-                            break;
-                        case 2:
-                            Elements.Add(new Element(Nodes[Elements[i - elementNum].FirstNode.Num + nodeNum - 1], Nodes[Elements[i - elementNum].SecondNode.Num + nodeNum - 1], Nodes[Elements[i - elementNum].ThirdNode.Num + nodeNum - 1], i + 1));
-                            break;
-                        case 15:
-                            Elements.Add(new Element(Nodes[Elements[i - elementNum].FirstNode.Num + nodeNum - 1], i + 1));
-                            break;
-                    }
-                }                              
+                {
+                    AddLayer(i);
+                }
                 k = 0;
                 foreach (string fileName in SegmentedImagesList.Items)
                 {
@@ -322,133 +532,15 @@ namespace WpfApp
                     }
                     k++;
                 }
-                for(int i = 0; i < Elements.Count; i++)
-                {
-                    switch (Elements[i].Type)
-                    {
-                        case 15:
-                            switch (Elements[i].Tag)
-                            {
-                                case 0:
-                                    Elements[i].FirstNode.TagCounter[0]++;
-                                    break;
-                                case 1:
-                                    Elements[i].FirstNode.TagCounter[1]++;
-                                    break;
-                                case 2:
-                                    Elements[i].FirstNode.TagCounter[2]++;
-                                    break;
-                            }
-                            break;
-                        case 1:
-                            switch (Elements[i].Tag)
-                            {
-                                case 0:
-                                    Elements[i].FirstNode.TagCounter[0]++;
-                                    Elements[i].SecondNode.TagCounter[0]++;
-                                    break;
-                                case 1:
-                                    Elements[i].FirstNode.TagCounter[1]++;
-                                    Elements[i].SecondNode.TagCounter[1]++;
-                                    break;
-                                case 2:
-                                    Elements[i].FirstNode.TagCounter[2]++;
-                                    Elements[i].SecondNode.TagCounter[2]++;
-                                    break;
-                            }
-                            break;
-                        case 2:
-                            switch (Elements[i].Tag)
-                            {
-                                case 0:
-                                    Elements[i].FirstNode.TagCounter[0]++;
-                                    Elements[i].SecondNode.TagCounter[0]++;
-                                    Elements[i].ThirdNode.TagCounter[0]++;
-                                    break;
-                                case 1:
-                                    Elements[i].FirstNode.TagCounter[1]++;
-                                    Elements[i].SecondNode.TagCounter[1]++;
-                                    Elements[i].ThirdNode.TagCounter[1]++;
-                                    break;
-                                case 2:
-                                    Elements[i].FirstNode.TagCounter[2]++;
-                                    Elements[i].SecondNode.TagCounter[2]++;
-                                    Elements[i].ThirdNode.TagCounter[2]++;
-                                    break;
-                            }
-                            break;
-                    }
-                }
-                for (int i = 0; i < Nodes.Count; i++)
-                {
-                    if (Nodes[i].TagCounter[0] > Nodes[i].TagCounter[1] && Nodes[i].TagCounter[0] > Nodes[i].TagCounter[2])
-                    {
-                        Nodes[i].Tag = 0;
-                    }
-                    else if (Nodes[i].TagCounter[1] > Nodes[i].TagCounter[0] && Nodes[i].TagCounter[1] > Nodes[i].TagCounter[2])
-                    {
-                        Nodes[i].Tag = 1;
-                    }
-                    else if (Nodes[i].TagCounter[2] > Nodes[i].TagCounter[0] && Nodes[i].TagCounter[2] > Nodes[i].TagCounter[1])
-                    {
-                        Nodes[i].Tag = 2;
-                    }
-                    else if (Nodes[i].TagCounter[0] == Nodes[i].TagCounter[1] && Nodes[i].TagCounter[0] > Nodes[i].TagCounter[2])
-                    {
-                        Nodes[i].Tag = 1; // Граница 1 и 2 фаз
-                    }
-                    else if (Nodes[i].TagCounter[0] == Nodes[i].TagCounter[2] && Nodes[i].TagCounter[0] > Nodes[i].TagCounter[1])
-                    {
-                        Nodes[i].Tag = 2; // Граница 1 и 3 фаз
-                    }
-                    else if (Nodes[i].TagCounter[1] == Nodes[i].TagCounter[2] && Nodes[i].TagCounter[1] > Nodes[i].TagCounter[0])
-                    {
-                        Nodes[i].Tag = 2; // Граница 2 и 3 фаз
-                    }
-                    else
-                    {
-                        Nodes[i].Tag = 0; // Граница всех фаз
-                    }
-                }
+                Parallel.For(0, Elements.Count, NodeTagsReading);
+                Parallel.For(0, Nodes.Count, NodeTagsRewriting);
                 int OldCount = Elements.Count;
-                for (int i = elementNum; i < OldCount; i++)
+                Elements.Capacity *= 4; 
+                Parallel.For(elementNum, OldCount, TetrahedronsCreating);
+                Elements.Capacity = Elements.Count;
+                for (int i = 0; i < Elements.Count; i++)
                 {
-                    if (Elements[i].Tag == Elements[i - elementNum].Tag && Elements[i].Type == 2 && Elements[i - elementNum].Type == 2)
-                    {
-                        Elements.Capacity += 3;                
-                        Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i].Tag));
-                        Elements.Add(new Element(Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i].ThirdNode, Elements.Count, Elements[i].Tag));
-                        Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i].Tag));                                            
-                    }
-                    else if (Elements[i].Tag != Elements[i - elementNum].Tag && Elements[i].Type == 2 && Elements[i - elementNum].Type == 2)
-                    {
-                        List<bool> ThisNodesTags = new List<bool>(3);
-                        if (Elements[i].FirstNode.Tag == Elements[i].Tag)
-                        {
-                            ThisNodesTags.Add(true);
-                        }
-                        else
-                        {
-                            ThisNodesTags.Add(false);
-                        }
-                        if (Elements[i].SecondNode.Tag == Elements[i].Tag)
-                        {
-                            ThisNodesTags.Add(true);
-                        }
-                        else
-                        {
-                            ThisNodesTags.Add(false);
-                        }
-                        if (Elements[i].ThirdNode.Tag == Elements[i].Tag)
-                        {
-                            ThisNodesTags.Add(true);
-                        }
-                        else
-                        {
-                            ThisNodesTags.Add(false);
-                        }
-                        NewTetrahedron(ref Elements, TetrahedronsConfiguration(ThisNodesTags), i, elementNum);
-                    }
+                    Elements[i].Num = i + 1;
                 }
                 StreamWriter Fout = new StreamWriter(meshes_path.Text + @"\resmesh" + ".msh");
                 Fout.WriteLine("$MeshFormat");
@@ -465,7 +557,7 @@ namespace WpfApp
                     X = X.Replace(',', '.');
                     Y = Y.Replace(',', '.');
                     Z = Z.Replace(',', '.');
-                    Fout.WriteLine(Num + " " + X + " " + Y + " " + Z);
+                    Fout.WriteLine(Nodes[i].Num + " " + X + " " + Y + " " + Z);
                 }
                 Fout.WriteLine("$EndNodes");
                 Fout.WriteLine("$Elements");
@@ -476,16 +568,16 @@ namespace WpfApp
                     switch (Elements[i].Type)
                     {
                         case 15:
-                            Fout.WriteLine(Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num);
+                            Fout.WriteLine(Elements[i].Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num);
                             break;
                         case 1:
-                            Fout.WriteLine(Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num + " " + Elements[i].SecondNode.Num);
+                            Fout.WriteLine(Elements[i].Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num + " " + Elements[i].SecondNode.Num);
                             break;
                         case 2:
                             Fout.WriteLine(Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num + " " + Elements[i].SecondNode.Num + " " + Elements[i].ThirdNode.Num);
                             break;
                         case 4:
-                            Fout.WriteLine(Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num + " " + Elements[i].SecondNode.Num + " " + Elements[i].ThirdNode.Num + " " + Elements[i].FourthNode.Num);
+                            Fout.WriteLine(Elements[i].Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num + " " + Elements[i].SecondNode.Num + " " + Elements[i].ThirdNode.Num + " " + Elements[i].FourthNode.Num);
                             break;
                     }
                 }
@@ -494,9 +586,9 @@ namespace WpfApp
                 Console_block.Text += "\nNew mesh segmented;";
                 SegmentedMeshesList.Items.Add(meshes_path.Text + @"\resmesh" + ".msh");
             }
-            catch (Exception e)
+            catch (Exception e2)
             {
-                System.Windows.MessageBox.Show("Error! " + e.Message);
+                System.Windows.MessageBox.Show("Error! " + e2.Message);
             }
         }
         byte TetrahedronsConfiguration(List<bool> Config)
@@ -546,43 +638,43 @@ namespace WpfApp
                 switch (Config)
                 {
                     case 1:
-                        Elements.Capacity += 3;
+                        //Elements.Capacity += 3;
                         Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i].Tag));
                         Elements.Add(new Element(Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i].ThirdNode, Elements.Count, Elements[i - elementNum].Tag));
                         Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i].Tag));
                         break;
                     case 2:
-                        Elements.Capacity += 3;
+                        //Elements.Capacity += 3;
                         Elements.Add(new Element(Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i].SecondNode, Elements[i - elementNum].ThirdNode, Elements.Count, Elements[i].Tag));
                         Elements.Add(new Element(Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i].SecondNode, Elements.Count, Elements[i - elementNum].Tag));
                         Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i].Tag));
                         break;
                     case 3:
-                        Elements.Capacity += 3;
+                        //Elements.Capacity += 3;
                         Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i].Tag));
                         Elements.Add(new Element(Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i].FirstNode, Elements.Count, Elements[i - elementNum].Tag));
                         Elements.Add(new Element(Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements.Count, Elements[i].Tag));
                         break;
                     case 4:
-                        Elements.Capacity += 3;
+                        //Elements.Capacity += 3;
                         Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i].Tag));
                         Elements.Add(new Element(Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i].ThirdNode, Elements.Count, Elements[i - elementNum].Tag));
                         Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i - elementNum].Tag));
                         break;
                     case 5:
-                        Elements.Capacity += 3;
+                        //Elements.Capacity += 3;
                         Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i].Tag));
                         Elements.Add(new Element(Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i].FirstNode, Elements.Count, Elements[i - elementNum].Tag));
                         Elements.Add(new Element(Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements.Count, Elements[i - elementNum].Tag));
                         break;
                     case 6:
-                        Elements.Capacity += 3;
+                        //Elements.Capacity += 3;
                         Elements.Add(new Element(Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i].SecondNode, Elements[i - elementNum].ThirdNode, Elements.Count, Elements[i].Tag));
                         Elements.Add(new Element(Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i].SecondNode, Elements.Count, Elements[i - elementNum].Tag));
                         Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i - elementNum].Tag));
                         break;
                     case 7:
-                        Elements.Capacity += 3;
+                        //Elements.Capacity += 3;
                         Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i - elementNum].Tag));
                         Elements.Add(new Element(Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i].ThirdNode, Elements.Count, Elements[i - elementNum].Tag));
                         Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i - elementNum].Tag));
@@ -590,6 +682,154 @@ namespace WpfApp
                 }
             }
             catch (Exception e)
+            {
+                System.Windows.MessageBox.Show("Error! " + e.Message);
+            }
+        }
+        void NodeReplacing(ref List<Node> Nodes, int i)
+        {
+            string fileName = (string)SegmentedImagesList.Items[i];
+            Mat img1 = new Mat(fileName);
+            Mat hsv = new Mat(img1.Cols, img1.Rows, 8, 3);
+            Cv2.CvtColor(img1, hsv, ColorConversionCodes.BGR2HSV);
+            Mat[] splitedHsv = new Mat[3];
+            Cv2.Split(hsv, out splitedHsv);
+            //CT_Scan_Orig.Source = BitmapFrame.Create(new Uri(fileName));
+            for (int x = 0; x < hsv.Rows; x++)
+            {
+                for (int y = 0; y < hsv.Cols; y++)
+                {
+                    if (x != 0 && y != 0 && x != img1.Cols - 1 && y != img1.Rows - 1)
+                    {
+                        bool[][] filter_matrix = new bool[3][];
+                        int main_V = 0;
+                        for (int k = 0; k < 3; i++)
+                        {
+                            filter_matrix[k] = new bool[3];                           
+                            //for (int j = 0; j < 3; j++)
+                            //{
+                            //    filter_matrix[k][j] = (int)(splitedHsv[2].At<byte>(x - 1 + k, y - 1 + j));
+                            //    main_V += filter_matrix[k][j];
+                            //}
+                        }
+                        filter_matrix[0][0] = true;
+                        for (int p = 0; p < 3; p++)
+                        {
+                            for (int q = 0; q < 3; q++)
+                            {
+                                filter_matrix[p][q] = (int)(splitedHsv[2].At<byte>(x - 1 + p, y - 1 + q)) == (int)(splitedHsv[2].At<byte>(x - 1, y - 1));
+                            }
+                        }                        
+                    }
+                }
+            }
+        }
+        byte MatrixConfig(bool[][] Matrix)
+        {
+            byte result = 0;
+            if (Matrix[0][0] == Matrix[0][1] == Matrix[0][2] && Matrix[0][0] != Matrix[1][1])
+            {
+                result = 1;
+            }
+            else if (Matrix[0][0] == Matrix[1][0] == Matrix[0][1] && Matrix[0][0] != Matrix[1][1])
+            {
+                result = 2;
+            }
+            else if (Matrix[0][0] == Matrix[1][0] == Matrix[2][0] && Matrix[0][0] != Matrix[1][1])
+            {
+                result = 3;
+            }
+            else if (Matrix[1][0] == Matrix[2][0] == Matrix[2][1] && Matrix[1][0] != Matrix[1][1])
+            {
+                result = 4;
+            }
+            else if (Matrix[2][0] == Matrix[2][1] == Matrix[2][2] && Matrix[2][0] != Matrix[1][1])
+            {
+                result = 5;
+            }
+            else if (Matrix[2][1] == Matrix[1][0] == Matrix[2][0] && Matrix[0][0] != Matrix[1][1])
+            {
+                result = 3;
+            }
+            else if (Matrix[0][0] == Matrix[1][0] == Matrix[2][0] && Matrix[0][0] != Matrix[1][1])
+            {
+                result = 3;
+            }
+            else if (Matrix[0][0] == Matrix[1][0] == Matrix[2][0] && Matrix[0][0] != Matrix[1][1])
+            {
+                result = 3;
+            }
+            else if (Matrix[0][0] == Matrix[1][0] == Matrix[2][0] && Matrix[0][0] != Matrix[1][1])
+            {
+                result = 3;
+            }
+        }
+        void FiltrationOfScan(int i)
+        {
+            string fileName = (string)SegmentedImagesList.Items[i];
+            Mat img1 = new Mat(fileName);
+            Mat hsv = new Mat(img1.Cols, img1.Rows, 8, 3);
+            Cv2.CvtColor(img1, hsv, ColorConversionCodes.BGR2HSV);
+            Mat[] splitedHsv = new Mat[3];
+            Cv2.Split(hsv, out splitedHsv);
+            //CT_Scan_Orig.Source = BitmapFrame.Create(new Uri(fileName));
+            for (int x = 0; x < hsv.Rows; x++)
+            {
+                for (int y = 0; y < hsv.Cols; y++)
+                {
+                    if (x != 0 && y != 0 && x != img1.Cols - 1 && y != img1.Rows - 1)
+                    {
+                        int[][] filter_matrix = new int[3][];
+                        int main_V = 0;
+                        for (int k = 0; k < 3; i++)
+                        {
+                            filter_matrix[i] = new int[3];
+                            for (int j = 0; j < 3; j++)
+                            {
+                                filter_matrix[k][j] = (int)(splitedHsv[2].At<byte>(x - 1 + k, y - 1 + j));
+                                main_V += filter_matrix[k][j];
+                            }
+                        }
+                        main_V /= 9;
+                        if (main_V < 150)
+                        {
+                            img1.At<Vec3b>(x, y)[0] = 0;
+                            img1.At<Vec3b>(x, y)[1] = 0;
+                            img1.At<Vec3b>(x, y)[2] = 0;
+                        }
+                        else if (main_V < 255)
+                        {
+                            img1.At<Vec3b>(x, y)[0] = 150;
+                            img1.At<Vec3b>(x, y)[1] = 150;
+                            img1.At<Vec3b>(x, y)[2] = 150;
+                        }
+                        else
+                        {
+                            img1.At<Vec3b>(x, y)[0] = 255;
+                            img1.At<Vec3b>(x, y)[1] = 255;
+                            img1.At<Vec3b>(x, y)[2] = 255;
+                        }
+                    }
+                }
+            }
+            Cv2.ImWrite(scansPath + @"\res_filtered" + i + ".tif", img1);
+            //CT_Scan.Source = BitmapFrame.Create(new Uri((String)scans_path.Text + @"\res_filtered" + i + ".tif"));
+            //SegmentedImagesList.Items.Add(scans_path.Text + @"\res_filtered" + i + ".tif");
+        }
+        void ParallelFilter()
+        {
+            try
+            {
+                int oldCount = SegmentedImagesList.Items.Count;
+                Parallel.For(0, oldCount, FiltrationOfScan);
+                SegmentedImagesList.Items.Clear();
+                for (int i = 0; i < oldCount; i++)
+                {
+                    CT_Scan.Source = BitmapFrame.Create(new Uri((String)scans_path.Text + @"\res_filtered" + i + ".tif"));
+                    SegmentedImagesList.Items.Add(scans_path.Text + @"\res_filtered" + i + ".tif");
+                }                
+            }
+            catch(Exception e)
             {
                 System.Windows.MessageBox.Show("Error! " + e.Message);
             }
@@ -1093,8 +1333,8 @@ namespace WpfApp
         {
             try
             {
-                segmentation();
-                filter();
+                ParallelSegmentation();
+                ParallelFilter();
                 //filter();
                 //filter();
                 if (Cylinder.IsChecked == true)
@@ -1199,8 +1439,7 @@ namespace WpfApp
         private void mesh_button_Click(object sender, RoutedEventArgs e)
         {
             LayerMeshCreating();
-            //mesh_segmentation();
-        }
+        }        
         private void btnSaveGeo_Click(object sender, RoutedEventArgs e)
         {
             try

@@ -94,11 +94,11 @@ namespace WpfApp
             Centre.Y = (first.Y + second.Y) / 2;
             Centre.Z = (first.Z + second.Z) / 2;
         }
-        public Element(Node node, int num, int Tag)
+        public Element(Node node, int num, int tag)
         {
             FirstNode = node;
             Num = num;
-            Tag = Tag;
+            Tag = tag;
             Type = 15;
             Centre = node;
         }

@@ -13,6 +13,9 @@
             <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Left" Height="477" VerticalAlignment="Top" Width="393">
                 <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Left" Height="63" Margin="278.2,103.2,0,0" VerticalAlignment="Top" Width="104"/>
             </Border>
+            <Border BorderBrush="Black" BorderThickness="1" HorizontalAlignment="Left" Height="23" Margin="125,232,0,0" VerticalAlignment="Top" Width="257">
+                <ProgressBar Minimum="0" Maximum="100" Name="ProcessStatus" />
+            </Border>
             <Button Name="btnOpenSegmentedScans" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="234,84,0,0" Click="btnOpenSegmentedScans_Click" Height="25" Foreground="Black" Background="White" RenderTransformOrigin="0.587,-0.252" >Path</Button>
             <Button Name="btnOpenScans" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="234,26,0,0" Click="btnOpenScans_Click" Height="25" Foreground="Black" Background="White" RenderTransformOrigin="0.587,-0.252" >Path</Button>
             <Button Name="btnSaveScans" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="234,142,0,0" Click="btnSaveScans_Click" Height="25" Foreground="Black" Background="White" RenderTransformOrigin="0.542,1.764">Path</Button>
