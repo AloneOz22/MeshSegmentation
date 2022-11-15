@@ -152,6 +152,7 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Mesh.cs" />
     <Compile Include="Node.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>

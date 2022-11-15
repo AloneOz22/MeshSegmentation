@@ -1,48 +1,27 @@
 ﻿using System;
 using System.IO;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
-using Microsoft.Win32;
-using System.Drawing;
-using System.Data;
-using System.Threading;
 using OpenCvSharp;
-using OpenTK;
-using OpenTK.Graphics;
-using OpenTK.Graphics.OpenGL;
 using System.Windows.Forms;
-using System.ComponentModel;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 namespace WpfApp
 {
     /// <summary>
     /// Логика взаимодействия для MainWindow.xaml
     /// </summary>
-    
+
     public partial class MainWindow : System.Windows.Window
     {
-        StreamReader Fin;
-        List<Node> Nodes;
-        List<Element> Elements;
-        int nodeNum;
-        int elementNum;
-        int Lowscope;
-        int Midscope;
-        int Topscope;
-        int oldCount;
-        string scansPath;
-        const double EPS = 0.00000000000001;
+        object imagesListLock = new object();
+        object segmentedimagesListLock = new object();
+        object lowscopeLock = new object();
+        object midscopeLock = new object();
+        object topscopeLock = new object();
+        object scanPathLock = new object();
         public MainWindow()
         {
             InitializeComponent();
@@ -58,7 +37,31 @@ namespace WpfApp
         }
         void SegmentationOfScan(int i)
         {
-            string fileName = (string)ImagesList.Items[i];
+            
+            string scansPath, fileName;
+            int topScope, midScope, lowScope;
+            lock (scanPathLock)
+            {
+                scansPath = scans_path.Text;
+            }
+            lock (lowscopeLock)
+            {
+                lowScope = Convert.ToInt32(LowScope.Text);
+            }
+            lock (midscopeLock)
+            {
+                midScope = Convert.ToInt32(MidScope.Text);
+            }
+            lock (topscopeLock)
+            {
+                topScope = Convert.ToInt32(TopScope.Text);
+            }
+            lock (imagesListLock)
+            {
+                fileName = (string)ImagesList.Items[i];
+            }
+
+            
             Mat img1 = new Mat(fileName);
             Mat hsv = new Mat(img1.Cols, img1.Rows, 8, 3);
             Cv2.CvtColor(img1, hsv, ColorConversionCodes.BGR2HSV);
@@ -72,14 +75,14 @@ namespace WpfApp
                     int H = (int)(splitedHsv[0].At<byte>(x, y));        // Тон
                     int S = (int)(splitedHsv[1].At<byte>(x, y));        // Интенсивность
                     int V = (int)(splitedHsv[2].At<byte>(x, y));        // Яркость
-                    if (V >= Lowscope && V < Midscope)
+                    if (V >= lowScope && V < midScope)
                     {
                         img1.At<Vec3b>(x, y)[0] = 0;
                         img1.At<Vec3b>(x, y)[1] = 0;
                         img1.At<Vec3b>(x, y)[2] = 0;
                     }
                     else
-                        if (V >= Midscope && V < Topscope)
+                        if (V >= midScope && V < topScope)
                     {
                         img1.At<Vec3b>(x, y)[0] = 150;
                         img1.At<Vec3b>(x, y)[1] = 150;
@@ -95,16 +98,17 @@ namespace WpfApp
             }
             Cv2.ImWrite(scansPath + @"\res" + i + ".tif", img1);           
         }
-        void ParallelSegmentation()
+        async void ParallelSegmentation()
         {
             try
             {
-                scansPath = scans_path.Text;
-                Lowscope = Convert.ToInt32(LowScope.Text);
-                Midscope = Convert.ToInt32(MidScope.Text);
-                Topscope = Convert.ToInt32(TopScope.Text);
-                Parallel.For(0, ImagesList.Items.Count, SegmentationOfScan);
-                for(int i = 0; i < ImagesList.Items.Count; i++)
+                Task[] tasks = new Task[ImagesList.Items.Count];
+                for (int i = 0; i < tasks.Length; i++)
+                {
+                    tasks[i] = Task.Run(() => SegmentationOfScan(i));
+                }
+                await Task.WhenAll(tasks);
+                for (int i = 0; i < ImagesList.Items.Count; i++)
                 {
                     CT_Scan.Source = BitmapFrame.Create(new Uri((String)scans_path.Text + @"\res" + i + ".tif"));
                     SegmentedImagesList.Items.Add(scans_path.Text + @"\res" + i + ".tif");
@@ -117,656 +121,13 @@ namespace WpfApp
                 System.Windows.MessageBox.Show("Error! " + e.Message);
             }
         }
-        void segmentation()
-        {
-            try
-            {
-                SegmentedImagesList.Items.Clear();
-                int k = 0;
-                foreach (string fileName in ImagesList.Items)
-                {
-                    Mat img1 = new Mat(fileName);
-                    Mat hsv = new Mat(img1.Cols, img1.Rows, 8, 3);
-                    Cv2.CvtColor(img1, hsv, ColorConversionCodes.BGR2HSV);
-                    Mat[] splitedHsv = new Mat[3];
-                    Cv2.Split(hsv, out splitedHsv);
-                    CT_Scan_Orig.Source = BitmapFrame.Create(new Uri(fileName));
-                    for (int x = 0; x < hsv.Rows; x++)
-                    {
-                        for (int y = 0; y < hsv.Cols; y++)
-                        {
-                            int H = (int)(splitedHsv[0].At<byte>(x, y));        // Тон
-                            int S = (int)(splitedHsv[1].At<byte>(x, y));        // Интенсивность
-                            int V = (int)(splitedHsv[2].At<byte>(x, y));        // Яркость
-                            if (V >= Convert.ToInt32(LowScope.Text) && V < Convert.ToInt32(MidScope.Text))
-                            {
-                                img1.At<Vec3b>(x, y)[0] = 0;
-                                img1.At<Vec3b>(x, y)[1] = 0;
-                                img1.At<Vec3b>(x, y)[2] = 0;
-                            }
-                            else
-                                if (V >= Convert.ToInt32(MidScope.Text) && V < Convert.ToInt32(TopScope.Text))
-                            {
-                                img1.At<Vec3b>(x, y)[0] = 150;
-                                img1.At<Vec3b>(x, y)[1] = 150;
-                                img1.At<Vec3b>(x, y)[2] = 150;
-                            }
-                            else
-                            {
-                                img1.At<Vec3b>(x, y)[0] = 255;
-                                img1.At<Vec3b>(x, y)[1] = 255;
-                                img1.At<Vec3b>(x, y)[2] = 255;
-                            }
-                        }
-                    }
-                    Cv2.ImWrite(scans_path.Text + @"\res" + k + ".tif", img1);
-                    CT_Scan.Source = BitmapFrame.Create(new Uri((String)scans_path.Text + @"\res" + k + ".tif"));
-                    SegmentedImagesList.Items.Add(scans_path.Text + @"\res" + k + ".tif");
-                    Console_block.Text += "\nNew scan segmented";
-                    num_of_scans.Text = "Elements: " + Convert.ToString(ImagesList.Items.Count);
-                    k++;
-                }
-            }
-            catch (Exception e1)
-            {
-                System.Windows.MessageBox.Show("Error! " + e1.Message);
-            }
-        }
-        void SquareGeoCreating()
-        {
-            try
-            {
-                string alpha = "0.001";
-                StreamWriter fout = new StreamWriter(geometry_path.Text + @"\res" + ".geo");
-                height.Text = height.Text.Replace('.', ',');
-                radius.Text = radius.Text.Replace('.', ',');
-                float RealRadius = (float)Convert.ToDouble(radius.Text);
-                float Diameter = RealRadius * 2.0f;
-                string StringDiameter = Convert.ToString(Diameter);
-                height.Text = height.Text.Replace(',', '.');
-                radius.Text = radius.Text.Replace(',', '.');
-                StringDiameter = StringDiameter.Replace(',', '.');
-                float PointParam = 0.001f;
-                string Transfinition = Convert.ToString(PointParam);
-                Transfinition = Transfinition.Replace(',', '.');
-                fout.WriteLine("Point(1) = { 0, 0, 0, " + alpha + "};");
-                fout.WriteLine("Point(2) = { 0.06, 0, 0, " + alpha + "};");
-                fout.WriteLine("Point(3) = { 0.06, 0.06, 0, " + alpha + "};");
-                fout.WriteLine("Point(4) = { 0, 0.06, 0, " + alpha + "};");
-                fout.WriteLine("Line(1) = { 1, 2};");
-                fout.WriteLine("Line(2) = { 2, 3};");
-                fout.WriteLine("Line(3) = { 3, 4};");
-                fout.WriteLine("Line(4) = { 4, 1};");
-                fout.WriteLine("Line Loop(1) = { 1, 2, 3, 4};");
-                fout.WriteLine("Plane Surface(1) = { 1};");
-                fout.Close();
-            }
-            catch(Exception e)
-            {
-                System.Windows.MessageBox.Show("Error! " + e.Message);
-            }
-        }
-        void NodesReading(int i)
-        {
-            string cycleHelpString = Fin.ReadLine();
-            string[] Subs = cycleHelpString.Split(' ');
-            Subs[1] = Subs[1].Replace('.', ',');
-            Subs[2] = Subs[2].Replace('.', ',');
-            Subs[3] = Subs[3].Replace('.', ',');
-            Nodes.Add(new Node(Convert.ToInt32(Subs[0]), Convert.ToDouble(Subs[1]), Convert.ToDouble(Subs[2]), Convert.ToDouble(Subs[3])));
-        }
-        void ElementsReading(int i)
-        {
-            string[] Subs = Fin.ReadLine().Split(' ');
-            switch (Convert.ToInt32(Subs[1]))
-            {
-                case 1:
-                    Elements.Add(new Element(Nodes[Convert.ToInt32(Subs[5]) - 1], Nodes[Convert.ToInt32(Subs[6]) - 1], i + 1));
-                    break;
-                case 2:
-                    Elements.Add(new Element(Nodes[Convert.ToInt32(Subs[5]) - 1], Nodes[Convert.ToInt32(Subs[6]) - 1], Nodes[Convert.ToInt32(Subs[7]) - 1], i + 1));
-                    break;
-                case 15:
-                    Elements.Add(new Element(Nodes[Convert.ToInt32(Subs[5]) - 1], i + 1));
-                    break;
-            }
-        }
-        void AddLayer(int i)
-        {
-            switch (Elements[i - elementNum].Type)
-            {
-                case 1:
-                    Elements.Add(new Element(Nodes[Elements[i - elementNum].FirstNode.Num + nodeNum - 1], Nodes[Elements[i - elementNum].SecondNode.Num + nodeNum - 1], i + 1));
-                    break;
-                case 2:
-                    Elements.Add(new Element(Nodes[Elements[i - elementNum].FirstNode.Num + nodeNum - 1], Nodes[Elements[i - elementNum].SecondNode.Num + nodeNum - 1], Nodes[Elements[i - elementNum].ThirdNode.Num + nodeNum - 1], i + 1));
-                    break;
-                case 15:
-                    Elements.Add(new Element(Nodes[Elements[i - elementNum].FirstNode.Num + nodeNum - 1], i + 1));
-                    break;
-            }
-        }
-        void NodeTagsReading(int i)
-        {
-            switch (Elements[i].Type)
-            {
-                case 15:
-                    switch (Elements[i].Tag)
-                    {
-                        case 0:
-                            Elements[i].FirstNode.TagCounter[0]++;
-                            break;
-                        case 1:
-                            Elements[i].FirstNode.TagCounter[1]++;
-                            break;
-                        case 2:
-                            Elements[i].FirstNode.TagCounter[2]++;
-                            break;
-                    }
-                    break;
-                case 1:
-                    switch (Elements[i].Tag)
-                    {
-                        case 0:
-                            Elements[i].FirstNode.TagCounter[0]++;
-                            Elements[i].SecondNode.TagCounter[0]++;
-                            break;
-                        case 1:
-                            Elements[i].FirstNode.TagCounter[1]++;
-                            Elements[i].SecondNode.TagCounter[1]++;
-                            break;
-                        case 2:
-                            Elements[i].FirstNode.TagCounter[2]++;
-                            Elements[i].SecondNode.TagCounter[2]++;
-                            break;
-                    }
-                    break;
-                case 2:
-                    switch (Elements[i].Tag)
-                    {
-                        case 0:
-                            Elements[i].FirstNode.TagCounter[0]++;
-                            Elements[i].SecondNode.TagCounter[0]++;
-                            Elements[i].ThirdNode.TagCounter[0]++;
-                            break;
-                        case 1:
-                            Elements[i].FirstNode.TagCounter[1]++;
-                            Elements[i].SecondNode.TagCounter[1]++;
-                            Elements[i].ThirdNode.TagCounter[1]++;
-                            break;
-                        case 2:
-                            Elements[i].FirstNode.TagCounter[2]++;
-                            Elements[i].SecondNode.TagCounter[2]++;
-                            Elements[i].ThirdNode.TagCounter[2]++;
-                            break;
-                    }
-                    break;
-            }
-        }
-        void NodeTagsRewriting(int i)
-        {
-            if (Nodes[i].TagCounter[0] > Nodes[i].TagCounter[1] && Nodes[i].TagCounter[0] > Nodes[i].TagCounter[2])
-            {
-                Nodes[i].Tag = 0;
-            }
-            else if (Nodes[i].TagCounter[1] > Nodes[i].TagCounter[0] && Nodes[i].TagCounter[1] > Nodes[i].TagCounter[2])
-            {
-                Nodes[i].Tag = 1;
-            }
-            else if (Nodes[i].TagCounter[2] > Nodes[i].TagCounter[0] && Nodes[i].TagCounter[2] > Nodes[i].TagCounter[1])
-            {
-                Nodes[i].Tag = 2;
-            }
-            else if (Nodes[i].TagCounter[0] == Nodes[i].TagCounter[1] && Nodes[i].TagCounter[0] > Nodes[i].TagCounter[2])
-            {
-                Nodes[i].Tag = 1; // Граница 1 и 2 фаз
-            }
-            else if (Nodes[i].TagCounter[0] == Nodes[i].TagCounter[2] && Nodes[i].TagCounter[0] > Nodes[i].TagCounter[1])
-            {
-                Nodes[i].Tag = 2; // Граница 1 и 3 фаз
-            }
-            else if (Nodes[i].TagCounter[1] == Nodes[i].TagCounter[2] && Nodes[i].TagCounter[1] > Nodes[i].TagCounter[0])
-            {
-                Nodes[i].Tag = 2; // Граница 2 и 3 фаз
-            }
-            else
-            {
-                Nodes[i].Tag = 0; // Граница всех фаз
-            }
-        }
-        void TetrahedronsCreating(int i)
-        {
-            if (Elements[i].Tag == Elements[i - elementNum].Tag && Elements[i].Type == 2 && Elements[i - elementNum].Type == 2)
-            {
-                //Elements.Capacity += 3;
-                Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i].Tag));
-                Elements.Add(new Element(Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i].ThirdNode, Elements.Count, Elements[i].Tag));
-                Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i].Tag));
-            }
-            else if (Elements[i].Tag != Elements[i - elementNum].Tag && Elements[i].Type == 2 && Elements[i - elementNum].Type == 2)
-            {
-                List<bool> ThisNodesTags = new List<bool>(3);
-                if (Elements[i].FirstNode.Tag == Elements[i].Tag)
-                {
-                    ThisNodesTags.Add(true);
-                }
-                else
-                {
-                    ThisNodesTags.Add(false);
-                }
-                if (Elements[i].SecondNode.Tag == Elements[i].Tag)
-                {
-                    ThisNodesTags.Add(true);
-                }
-                else
-                {
-                    ThisNodesTags.Add(false);
-                }
-                if (Elements[i].ThirdNode.Tag == Elements[i].Tag)
-                {
-                    ThisNodesTags.Add(true);
-                }
-                else
-                {
-                    ThisNodesTags.Add(false);
-                }
-                NewTetrahedron(ref Elements, TetrahedronsConfiguration(ThisNodesTags), i, elementNum);
-            }
-        }
-        void LayerMeshCreating()
-        {
-            try
-            {
-
-                Fin = new StreamReader((string)MeshesList.Items[0]);
-                string HelpString = "";
-                do
-                {
-                    HelpString = Fin.ReadLine();
-                } while (HelpString != "$Nodes");
-                HelpString = Fin.ReadLine();
-                nodeNum = Convert.ToInt32(HelpString);
-                Nodes = new List<Node>(nodeNum);
-                //Parallel.For(0, Nodes.Capacity - 1, NodesReading);
-                for (int i = 0; i < Nodes.Capacity; i++)
-                {
-                    NodesReading(i);
-                }
-                Fin.ReadLine();
-                Fin.ReadLine();
-                elementNum = Convert.ToInt32(Fin.ReadLine());
-                Elements = new List<Element>(elementNum);
-                //Parallel.For(0, elementNum, ElementsReading);
-                for (int i = 0; i < elementNum; i++)
-                {
-                    ElementsReading(i);                   
-                }
-                Fin.Close();
-                int k = 0;
-                height.Text = height.Text.Replace('.', ',');
-                double Height = Convert.ToDouble(height.Text);                
-                Nodes.Capacity *= SegmentedImagesList.Items.Count;
-                Elements.Capacity *= SegmentedImagesList.Items.Count;
-                for (int i = nodeNum; i < Nodes.Capacity; i++)
-                {
-                    if (i % nodeNum == 0)
-                    {
-                        k++;
-                    }
-                    Nodes.Add(new Node(i + 1, Nodes[i - nodeNum].X, Nodes[i - nodeNum].Y, Height / SegmentedImagesList.Items.Count * k));                    
-                }
-                //Parallel.For(elementNum, Elements.Capacity, AddLayer);
-                for (int i = elementNum; i < Elements.Capacity; i++)
-                {
-                    AddLayer(i);
-                }
-                k = 0;
-                foreach (string fileName in SegmentedImagesList.Items)
-                {
-                    Mat Img = new Mat(fileName);
-                    Mat HSV = new Mat(Img.Cols, Img.Rows, 8, 3);
-                    Cv2.CvtColor(Img, HSV, ColorConversionCodes.BGR2HSV);
-                    Mat[] splitedHsv = new Mat[3];
-                    Cv2.Split(HSV, out splitedHsv);
-                    height.Text = height.Text.Replace('.', ',');
-                    radius.Text = radius.Text.Replace('.', ',');
-                    double z_scan = Convert.ToDouble(height.Text);
-                    double scan_radius = Convert.ToDouble(radius.Text);
-                    for (int i = 0; i < Elements.Count; i++)
-                    {
-                        double h_centre = Elements[i].Centre.Z;
-                        double scan_pos = k * z_scan / SegmentedImagesList.Items.Count;
-                        if (Math.Abs(scan_pos - h_centre) < EPS)
-                        {
-                            switch (Elements[i].Type)
-                            {
-                                case 1:
-                                    {
-                                        byte[] Brightness = new byte[3];
-                                        Brightness[0] = (byte)(splitedHsv[2].At<byte>((int)Math.Abs((Elements[i].FirstNode.X / (scan_radius * 2) * Img.Cols) - EPS), (int)Math.Abs((Elements[i].FirstNode.Y / (scan_radius * 2) * Img.Rows) - EPS)));
-                                        Brightness[1] = (byte)(splitedHsv[2].At<byte>((int)Math.Abs((Elements[i].SecondNode.X / (scan_radius * 2) * Img.Cols) - EPS), (int)Math.Abs((Elements[i].SecondNode.Y / (scan_radius * 2) * Img.Rows) - EPS)));
-                                        Brightness[2] = (byte)(splitedHsv[2].At<byte>((int)Math.Abs((Elements[i].Centre.X / (scan_radius * 2) * Img.Cols) - EPS), (int)Math.Abs((Elements[i].Centre.Y / (scan_radius * 2) * Img.Rows) - EPS)));
-                                        byte[] PhysicalGroups = new byte[3];
-                                        for (int Group = 0; Group < 3; Group++)
-                                            PhysicalGroups[Group] = 0;
-                                        for (int index = 0; index < 3; index++)
-                                        {
-                                            if (Brightness[index] == 0)
-                                                PhysicalGroups[0]++;
-                                            if (Brightness[index] == 150)
-                                                PhysicalGroups[1]++;
-                                            if (Brightness[index] == 255)
-                                                PhysicalGroups[2]++;
-                                        }
-                                        if (PhysicalGroups[0] > PhysicalGroups[1] + PhysicalGroups[2])
-                                        {
-                                            Elements[i].Tag = 0;
-                                        }
-                                        else if (PhysicalGroups[1] > PhysicalGroups[0] + PhysicalGroups[2])
-                                        {
-                                            Elements[i].Tag = 1;
-                                        }
-                                        else
-                                        {
-                                            Elements[i].Tag = 2;
-                                        }
-
-                                        break;
-                                    }
-
-                                case 2:
-                                    {
-                                        byte[] Brightness = new byte[4];
-                                        Brightness[0] = (byte)(splitedHsv[2].At<byte>((int)Math.Abs((Elements[i].FirstNode.X / (scan_radius * 2) * Img.Cols) - EPS), (int)Math.Abs((Elements[i].FirstNode.Y / (scan_radius * 2) * Img.Rows) - EPS)));
-                                        Brightness[1] = (byte)(splitedHsv[2].At<byte>((int)Math.Abs((Elements[i].SecondNode.X / (scan_radius * 2) * Img.Cols) - EPS), (int)Math.Abs((Elements[i].SecondNode.Y / (scan_radius * 2) * Img.Rows) - EPS)));
-                                        Brightness[2] = (byte)(splitedHsv[2].At<byte>((int)Math.Abs((Elements[i].Centre.X / (scan_radius * 2) * Img.Cols) - EPS), (int)Math.Abs((Elements[i].Centre.Y / (scan_radius * 2) * Img.Rows) - EPS)));
-                                        Brightness[3] = (byte)(splitedHsv[2].At<byte>((int)Math.Abs((Elements[i].ThirdNode.X / (scan_radius * 2) * Img.Cols) - EPS), (int)Math.Abs((Elements[i].ThirdNode.Y / (scan_radius * 2) * Img.Rows) - EPS)));
-                                        byte[] PhysicalGroups = new byte[3];
-                                        for (int Group = 0; Group < 3; Group++)
-                                            PhysicalGroups[Group] = 0;
-                                        for (int index = 0; index < 4; index++)
-                                        {
-                                            if (Brightness[index] == 0)
-                                                PhysicalGroups[0]++;
-                                            if (Brightness[index] == 150)
-                                                PhysicalGroups[1]++;
-                                            if (Brightness[index] == 255)
-                                                PhysicalGroups[2]++;
-                                        }
-                                        if (PhysicalGroups[0] > PhysicalGroups[1] + PhysicalGroups[2])
-                                        {
-                                            Elements[i].Tag = 0;
-                                        }
-                                        else if (PhysicalGroups[1] > PhysicalGroups[0] + PhysicalGroups[2])
-                                        {
-                                            Elements[i].Tag = 1;
-                                        }
-                                        else
-                                        {
-                                            Elements[i].Tag = 2;
-                                        }
-
-                                        break;
-                                    }
-
-                                case 15:
-                                    {
-                                        int V = (int)(splitedHsv[2].At<byte>((int)Math.Abs((Elements[i].FirstNode.X / (scan_radius * 2) * Img.Cols) - EPS), (int)Math.Abs((Elements[i].FirstNode.Y / (scan_radius * 2) * Img.Rows) - EPS)));
-                                        if (V == 0)
-                                        {
-                                            Elements[i].Tag = 0;
-                                        }
-                                        else if (V == 150)
-                                        {
-                                            Elements[i].Tag = 1;
-                                        }
-                                        else if (V == 255)
-                                        {
-                                            Elements[i].Tag = 2;
-                                        }
-
-                                        break;
-                                    }
-                            }
-                        }
-                    }
-                    k++;
-                }
-                Parallel.For(0, Elements.Count, NodeTagsReading);
-                Parallel.For(0, Nodes.Count, NodeTagsRewriting);
-                int OldCount = Elements.Count;
-                Elements.Capacity *= 4; 
-                Parallel.For(elementNum, OldCount, TetrahedronsCreating);
-                Elements.Capacity = Elements.Count;
-                for (int i = 0; i < Elements.Count; i++)
-                {
-                    Elements[i].Num = i + 1;
-                }
-                StreamWriter Fout = new StreamWriter(meshes_path.Text + @"\resmesh" + ".msh");
-                Fout.WriteLine("$MeshFormat");
-                Fout.WriteLine("2.2 0 8");
-                Fout.WriteLine("$EndMeshFormat");
-                Fout.WriteLine("$Nodes");
-                Fout.WriteLine(Nodes.Count);
-                for (int i = 0; i < Nodes.Count; i++)
-                {
-                    int Num = i + 1;
-                    string X = Convert.ToString(Nodes[i].X);
-                    string Y = Convert.ToString(Nodes[i].Y);
-                    string Z = Convert.ToString(Nodes[i].Z);
-                    X = X.Replace(',', '.');
-                    Y = Y.Replace(',', '.');
-                    Z = Z.Replace(',', '.');
-                    Fout.WriteLine(Nodes[i].Num + " " + X + " " + Y + " " + Z);
-                }
-                Fout.WriteLine("$EndNodes");
-                Fout.WriteLine("$Elements");
-                Fout.WriteLine(Elements.Count);               
-                for (int i = 0; i < Elements.Count; i++)
-                {
-                    int Num = i + 1;
-                    switch (Elements[i].Type)
-                    {
-                        case 15:
-                            Fout.WriteLine(Elements[i].Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num);
-                            break;
-                        case 1:
-                            Fout.WriteLine(Elements[i].Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num + " " + Elements[i].SecondNode.Num);
-                            break;
-                        case 2:
-                            Fout.WriteLine(Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num + " " + Elements[i].SecondNode.Num + " " + Elements[i].ThirdNode.Num);
-                            break;
-                        case 4:
-                            Fout.WriteLine(Elements[i].Num + " " + Elements[i].Type + " " + 2 + " " + Elements[i].Tag + " " + Elements[i].Tag + " " + Elements[i].FirstNode.Num + " " + Elements[i].SecondNode.Num + " " + Elements[i].ThirdNode.Num + " " + Elements[i].FourthNode.Num);
-                            break;
-                    }
-                }
-                Fout.WriteLine("$EndElements");
-                Fout.Close();
-                Console_block.Text += "\nNew mesh segmented;";
-                SegmentedMeshesList.Items.Add(meshes_path.Text + @"\resmesh" + ".msh");
-            }
-            catch (Exception e2)
-            {
-                System.Windows.MessageBox.Show("Error! " + e2.Message);
-            }
-        }
-        byte TetrahedronsConfiguration(List<bool> Config)
-        {
-            try
-            {
-                byte Result = 0;
-                switch (Config[0])
-                {
-                    case true when Config[1] == true && Config[2] == true:
-                        Result = 0;
-                        break;
-                    case true when Config[1] == true && Config[2] == false:
-                        Result = 1;
-                        break;
-                    case true when Config[1] == false && Config[2] == true:
-                        Result = 2;
-                        break;
-                    case false when Config[1] == true && Config[2] == true:
-                        Result = 3;
-                        break;
-                    case true when Config[1] == false && Config[2] == false:
-                        Result = 4;
-                        break;
-                    case false when Config[1] == true && Config[2] == false:
-                        Result = 5;
-                        break;
-                    case false when Config[1] == false && Config[2] == true:
-                        Result = 6;
-                        break;
-                    case false when Config[1] == false && Config[2] == false:
-                        Result = 7;
-                        break;
-                }
-                return Result;
-            }
-            catch (Exception e)
-            {
-                System.Windows.MessageBox.Show("Error! " + e.Message);
-                return 10;
-            }
-        }
-        void NewTetrahedron(ref List<Element> Elements, byte Config, int i, int elementNum)
-        {
-            try
-            {
-                switch (Config)
-                {
-                    case 1:
-                        //Elements.Capacity += 3;
-                        Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i].Tag));
-                        Elements.Add(new Element(Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i].ThirdNode, Elements.Count, Elements[i - elementNum].Tag));
-                        Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i].Tag));
-                        break;
-                    case 2:
-                        //Elements.Capacity += 3;
-                        Elements.Add(new Element(Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i].SecondNode, Elements[i - elementNum].ThirdNode, Elements.Count, Elements[i].Tag));
-                        Elements.Add(new Element(Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i].SecondNode, Elements.Count, Elements[i - elementNum].Tag));
-                        Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i].Tag));
-                        break;
-                    case 3:
-                        //Elements.Capacity += 3;
-                        Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i].Tag));
-                        Elements.Add(new Element(Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i].FirstNode, Elements.Count, Elements[i - elementNum].Tag));
-                        Elements.Add(new Element(Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements.Count, Elements[i].Tag));
-                        break;
-                    case 4:
-                        //Elements.Capacity += 3;
-                        Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i].Tag));
-                        Elements.Add(new Element(Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i].ThirdNode, Elements.Count, Elements[i - elementNum].Tag));
-                        Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i - elementNum].Tag));
-                        break;
-                    case 5:
-                        //Elements.Capacity += 3;
-                        Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i].Tag));
-                        Elements.Add(new Element(Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i].FirstNode, Elements.Count, Elements[i - elementNum].Tag));
-                        Elements.Add(new Element(Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements.Count, Elements[i - elementNum].Tag));
-                        break;
-                    case 6:
-                        //Elements.Capacity += 3;
-                        Elements.Add(new Element(Elements[i].ThirdNode, Elements[i].FirstNode, Elements[i].SecondNode, Elements[i - elementNum].ThirdNode, Elements.Count, Elements[i].Tag));
-                        Elements.Add(new Element(Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i].SecondNode, Elements.Count, Elements[i - elementNum].Tag));
-                        Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i - elementNum].Tag));
-                        break;
-                    case 7:
-                        //Elements.Capacity += 3;
-                        Elements.Add(new Element(Elements[i].FirstNode, Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements.Count, Elements[i - elementNum].Tag));
-                        Elements.Add(new Element(Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements[i - elementNum].ThirdNode, Elements[i].ThirdNode, Elements.Count, Elements[i - elementNum].Tag));
-                        Elements.Add(new Element(Elements[i].SecondNode, Elements[i].ThirdNode, Elements[i - elementNum].FirstNode, Elements[i - elementNum].SecondNode, Elements.Count, Elements[i - elementNum].Tag));
-                        break;
-                }
-            }
-            catch (Exception e)
-            {
-                System.Windows.MessageBox.Show("Error! " + e.Message);
-            }
-        }
-        void NodeReplacing(ref List<Node> Nodes, int i)
-        {
-            string fileName = (string)SegmentedImagesList.Items[i];
-            Mat img1 = new Mat(fileName);
-            Mat hsv = new Mat(img1.Cols, img1.Rows, 8, 3);
-            Cv2.CvtColor(img1, hsv, ColorConversionCodes.BGR2HSV);
-            Mat[] splitedHsv = new Mat[3];
-            Cv2.Split(hsv, out splitedHsv);
-            //CT_Scan_Orig.Source = BitmapFrame.Create(new Uri(fileName));
-            for (int x = 0; x < hsv.Rows; x++)
-            {
-                for (int y = 0; y < hsv.Cols; y++)
-                {
-                    if (x != 0 && y != 0 && x != img1.Cols - 1 && y != img1.Rows - 1)
-                    {
-                        bool[][] filter_matrix = new bool[3][];
-                        int main_V = 0;
-                        for (int k = 0; k < 3; i++)
-                        {
-                            filter_matrix[k] = new bool[3];                           
-                            //for (int j = 0; j < 3; j++)
-                            //{
-                            //    filter_matrix[k][j] = (int)(splitedHsv[2].At<byte>(x - 1 + k, y - 1 + j));
-                            //    main_V += filter_matrix[k][j];
-                            //}
-                        }
-                        filter_matrix[0][0] = true;
-                        for (int p = 0; p < 3; p++)
-                        {
-                            for (int q = 0; q < 3; q++)
-                            {
-                                filter_matrix[p][q] = (int)(splitedHsv[2].At<byte>(x - 1 + p, y - 1 + q)) == (int)(splitedHsv[2].At<byte>(x - 1, y - 1));
-                            }
-                        }                        
-                    }
-                }
-            }
-        }
-        byte MatrixConfig(bool[][] Matrix)
-        {
-            byte result = 0;
-            if (Matrix[0][0] == Matrix[0][1] == Matrix[0][2] && Matrix[0][0] != Matrix[1][1])
-            {
-                result = 1;
-            }
-            else if (Matrix[0][0] == Matrix[1][0] == Matrix[0][1] && Matrix[0][0] != Matrix[1][1])
-            {
-                result = 2;
-            }
-            else if (Matrix[0][0] == Matrix[1][0] == Matrix[2][0] && Matrix[0][0] != Matrix[1][1])
-            {
-                result = 3;
-            }
-            else if (Matrix[1][0] == Matrix[2][0] == Matrix[2][1] && Matrix[1][0] != Matrix[1][1])
-            {
-                result = 4;
-            }
-            else if (Matrix[2][0] == Matrix[2][1] == Matrix[2][2] && Matrix[2][0] != Matrix[1][1])
-            {
-                result = 5;
-            }
-            else if (Matrix[2][1] == Matrix[1][0] == Matrix[2][0] && Matrix[0][0] != Matrix[1][1])
-            {
-                result = 3;
-            }
-            else if (Matrix[0][0] == Matrix[1][0] == Matrix[2][0] && Matrix[0][0] != Matrix[1][1])
-            {
-                result = 3;
-            }
-            else if (Matrix[0][0] == Matrix[1][0] == Matrix[2][0] && Matrix[0][0] != Matrix[1][1])
-            {
-                result = 3;
-            }
-            else if (Matrix[0][0] == Matrix[1][0] == Matrix[2][0] && Matrix[0][0] != Matrix[1][1])
-            {
-                result = 3;
-            }
-        }
         void FiltrationOfScan(int i)
         {
-            string fileName = (string)SegmentedImagesList.Items[i];
+            string fileName;
+            lock (segmentedimagesListLock)
+            {
+                fileName = (string)SegmentedImagesList.Items[i];
+            }
             Mat img1 = new Mat(fileName);
             Mat hsv = new Mat(img1.Cols, img1.Rows, 8, 3);
             Cv2.CvtColor(img1, hsv, ColorConversionCodes.BGR2HSV);
@@ -812,17 +173,33 @@ namespace WpfApp
                     }
                 }
             }
-            Cv2.ImWrite(scansPath + @"\res_filtered" + i + ".tif", img1);
+            lock (scanPathLock)
+            {
+                Cv2.ImWrite(scans_path.Text + @"\res_filtered" + i + ".tif", img1);
+            }
             //CT_Scan.Source = BitmapFrame.Create(new Uri((String)scans_path.Text + @"\res_filtered" + i + ".tif"));
             //SegmentedImagesList.Items.Add(scans_path.Text + @"\res_filtered" + i + ".tif");
         }
-        void ParallelFilter()
+        async void ParallelFilter()
         {
             try
             {
-                int oldCount = SegmentedImagesList.Items.Count;
-                Parallel.For(0, oldCount, FiltrationOfScan);
-                SegmentedImagesList.Items.Clear();
+                int oldCount;
+                lock (segmentedimagesListLock)
+                {
+                    oldCount = SegmentedImagesList.Items.Count;
+                }
+                
+                Task[] tasks = new Task[oldCount];
+                for (int i = 0; i < tasks.Length; i++)
+                {
+                    tasks[i] = Task.Run(() => FiltrationOfScan(i));
+                }
+                await Task.WhenAll(tasks);
+                lock (segmentedimagesListLock)
+                {
+                    SegmentedImagesList.Items.Clear();
+                }
                 for (int i = 0; i < oldCount; i++)
                 {
                     CT_Scan.Source = BitmapFrame.Create(new Uri((String)scans_path.Text + @"\res_filtered" + i + ".tif"));
@@ -834,73 +211,7 @@ namespace WpfApp
                 System.Windows.MessageBox.Show("Error! " + e.Message);
             }
         }
-        void filter()
-        {
-            int l = 0;
-            int o = 0;
-            string[] filenames = new string[SegmentedImagesList.Items.Count];
-            foreach(string fileName in SegmentedImagesList.Items)
-            {
-                filenames[o] = fileName;
-                o++;
-            }
-            SegmentedImagesList.Items.Clear();
-            foreach(string fileName in filenames)
-            {
-                Mat img1 = new Mat(fileName);
-                Mat hsv = new Mat(img1.Cols, img1.Rows, 8, 3);
-                Cv2.CvtColor(img1, hsv, ColorConversionCodes.BGR2HSV);
-                Mat[] splitedHsv = new Mat[3];
-                Cv2.Split(hsv, out splitedHsv);
-                CT_Scan_Orig.Source = BitmapFrame.Create(new Uri(fileName));
-                for (int x = 0; x < hsv.Rows; x++)
-                {
-                    for (int y = 0; y < hsv.Cols; y++)
-                    {
-                        if (x != 0 && y != 0 && x != img1.Cols - 1 && y != img1.Rows - 1)
-                        {
-                            int[][] filter_matrix = new int[3][];
-                            int main_V = 0;
-                            for (int i = 0; i < 3; i++)
-                            {
-                                filter_matrix[i] = new int[3];
-                                for (int j = 0; j < 3; j++)
-                                {
-                                    filter_matrix[i][j] = (int)(splitedHsv[2].At<byte>(x - 1 + i, y - 1 + j));
-                                    main_V += filter_matrix[i][j];
-                                }
-                            }
-                            main_V /= 9;
-                            if (main_V < 150)
-                            {
-                                img1.At<Vec3b>(x, y)[0] = 0;
-                                img1.At<Vec3b>(x, y)[1] = 0;
-                                img1.At<Vec3b>(x, y)[2] = 0;
-                            }
-                            else if (main_V < 255)
-                            {
-                                img1.At<Vec3b>(x, y)[0] = 150;
-                                img1.At<Vec3b>(x, y)[1] = 150;
-                                img1.At<Vec3b>(x, y)[2] = 150;
-                            }
-                            else
-                            {
-                                img1.At<Vec3b>(x, y)[0] = 255;
-                                img1.At<Vec3b>(x, y)[1] = 255;
-                                img1.At<Vec3b>(x, y)[2] = 255;
-                            }
-                        }
-                    }
-                }
-                Cv2.ImWrite(scans_path.Text + @"\res_filtered" + l + ".tif", img1);
-                CT_Scan.Source = BitmapFrame.Create(new Uri((String)scans_path.Text + @"\res_filtered" + l + ".tif"));
-                SegmentedImagesList.Items.Add(scans_path.Text + @"\res_filtered" + l + ".tif");
-                //Console_block.Text += "\nNew scan filtered";
-                //num_of_scans.Text = "Elements: " + Convert.ToString(ImagesList.Items.Count);
-                l++;
-            }
-        }
-        void CylinderMeshCreating()
+        void CylinderGeoCreating()
         {
             try
             {
@@ -950,7 +261,7 @@ namespace WpfApp
                 System.Windows.MessageBox.Show("Error! " + e2.Message);
             }
         }
-        void cube_mesh_creating()
+        void CubeGeoCreating()
         {
             try
             {
@@ -968,379 +279,16 @@ namespace WpfApp
 
             }
         }
-        void mesh_segmentation()
-        {
-            try
-            {
-                StreamReader fin = new StreamReader((string)MeshesList.Items[0]);
-                string help_str = "";
-                do
-                {
-                    help_str = fin.ReadLine();
-                } while (help_str != "$Nodes");
-                help_str = fin.ReadLine();
-                int Nodes = Convert.ToInt32(help_str);
-                List<List<double>> NodeCoordinate = new List<List<double>>(Nodes);//[Номер узла][Номер координаты](Значение координаты)
-                for (int i = 0; i < Nodes; i++)
-                    NodeCoordinate.Add(new List<double>(3));              
-                for (int i = 0; i < NodeCoordinate.Capacity; i++)
-                {
-                    help_str = fin.ReadLine();
-                    string[] subs = help_str.Split(' ');
-                    subs[1] = subs[1].Replace('.', ',');
-                    subs[2] = subs[2].Replace('.', ',');
-                    subs[3] = subs[3].Replace('.', ',');
-                    NodeCoordinate[i].Add(Convert.ToDouble(subs[1]));
-                    NodeCoordinate[i].Add(Convert.ToDouble(subs[2]));
-                    NodeCoordinate[i].Add(Convert.ToDouble(subs[3]));
-                }
-                fin.ReadLine();
-                fin.ReadLine();
-                int Elements = Convert.ToInt32(fin.ReadLine());
-                int borders = 0;
-                List<int> ElementType = new List<int>(Elements);
-                List<List<int>> NodeOfElement = new List<List<int>>(Elements);//[Номер элемента][Порядковый номер узла в элементе](Номер узла из списка узлов в файле .msh)
-                for (int i = 0; i < Elements; i++)
-                    NodeOfElement.Add(new List<int>(4));              
-                List<List<double>> CentreOfElement = new List<List<double>>(Elements);//[Номер элемента][Номер координаты](Значение координаты)
-                for (int i = 0; i < Elements; i++)
-                {
-                    CentreOfElement.Add(new List<double>(3));
-                }
-                List<int> Tag = new List<int>(Elements);
-                for (int i = 0; i < Elements; i++)
-                {
-                    string[] subs = fin.ReadLine().Split(' ');
-                    if (Convert.ToInt32(subs[1]) == 1)
-                    {
-                        ElementType.Add(1);
-                        Tag.Add(Convert.ToInt32(subs[3]));
-                        NodeOfElement[i].Add(Convert.ToInt32(subs[5]));
-                        NodeOfElement[i].Add(Convert.ToInt32(subs[6]));
-                        CentreOfElement[i].Add((NodeCoordinate[NodeOfElement[i][0] - 1][0] + NodeCoordinate[NodeOfElement[i][1] - 1][0]) / 2);
-                        CentreOfElement[i].Add((NodeCoordinate[NodeOfElement[i][0] - 1][1] + NodeCoordinate[NodeOfElement[i][1] - 1][1]) / 2);
-                        CentreOfElement[i].Add((NodeCoordinate[NodeOfElement[i][0] - 1][2] + NodeCoordinate[NodeOfElement[i][1] - 1][2]) / 2);
-                    }
-                    else if (Convert.ToInt32(subs[1]) == 2)
-                    {
-                        ElementType.Add(2);
-                        Tag.Add(Convert.ToInt32(subs[3]));
-                        NodeOfElement[i].Add(Convert.ToInt32(subs[5]));
-                        NodeOfElement[i].Add(Convert.ToInt32(subs[6]));
-                        NodeOfElement[i].Add(Convert.ToInt32(subs[7]));
-                        CentreOfElement[i].Add((NodeCoordinate[NodeOfElement[i][0] - 1][0] + NodeCoordinate[NodeOfElement[i][1] - 1][0] + NodeCoordinate[NodeOfElement[i][2] - 1][0]) / 3);
-                        CentreOfElement[i].Add((NodeCoordinate[NodeOfElement[i][0] - 1][1] + NodeCoordinate[NodeOfElement[i][1] - 1][1] + NodeCoordinate[NodeOfElement[i][2] - 1][1]) / 3);
-                        CentreOfElement[i].Add((NodeCoordinate[NodeOfElement[i][0] - 1][2] + NodeCoordinate[NodeOfElement[i][1] - 1][2] + NodeCoordinate[NodeOfElement[i][2] - 1][2]) / 3);
-                    }
-                    else if (Convert.ToInt32(subs[1]) == 15)
-                    {
-                        ElementType.Add(15);
-                        Tag.Add(Convert.ToInt32(subs[3]));
-                        NodeOfElement[i].Add(Convert.ToInt32(subs[5]));
-                        CentreOfElement[i].Add(NodeCoordinate[NodeOfElement[i][0] - 1][0]);
-                        CentreOfElement[i].Add(NodeCoordinate[NodeOfElement[i][0] - 1][1]);
-                        CentreOfElement[i].Add(NodeCoordinate[NodeOfElement[i][0] - 1][2]);
-                    }
-                    else if (Convert.ToInt32(subs[1]) == 4)
-                    {
-                        ElementType.Add(4);
-                        Tag.Add(Convert.ToInt32(subs[3]));
-                        NodeOfElement[i].Add(Convert.ToInt32(subs[5]));
-                        NodeOfElement[i].Add(Convert.ToInt32(subs[6]));
-                        NodeOfElement[i].Add(Convert.ToInt32(subs[7]));
-                        NodeOfElement[i].Add(Convert.ToInt32(subs[8]));
-                        CentreOfElement[i].Add((NodeCoordinate[NodeOfElement[i][0] - 1][0] + NodeCoordinate[NodeOfElement[i][1] - 1][0] + NodeCoordinate[NodeOfElement[i][2] - 1][0] + NodeCoordinate[NodeOfElement[i][3] - 1][0]) / 4);
-                        CentreOfElement[i].Add((NodeCoordinate[NodeOfElement[i][0] - 1][1] + NodeCoordinate[NodeOfElement[i][1] - 1][1] + NodeCoordinate[NodeOfElement[i][2] - 1][1] + NodeCoordinate[NodeOfElement[i][3] - 1][1]) / 4);
-                        CentreOfElement[i].Add((NodeCoordinate[NodeOfElement[i][0] - 1][2] + NodeCoordinate[NodeOfElement[i][1] - 1][2] + NodeCoordinate[NodeOfElement[i][2] - 1][2] + NodeCoordinate[NodeOfElement[i][3] - 1][2]) / 4);
-                    }
-                }
-                fin.Close();
-                fin.DiscardBufferedData();
-                StreamWriter fout = new StreamWriter(meshes_path.Text + @"\resmesh" + ".msh");
-                //fout.WriteLine("$MeshFormat");
-                //fout.WriteLine("2.2 0 8");
-                //fout.WriteLine("$EndMeshFormat");
-                //fout.WriteLine("$Nodes");
-                //fout.WriteLine(NodeCoordinate.Count);
-                //for (int i = 0; i < nodes; i++)
-                //{
-                //    string x_node = Convert.ToString(x_nodes[i]);
-                //    string y_node = Convert.ToString(y_nodes[i]);
-                //    string z_node = Convert.ToString(z_nodes[i]);
-                //    x_node = x_node.Replace(',', '.');
-                //    y_node = y_node.Replace(',', '.');
-                //    z_node = z_node.Replace(',', '.');
-                //    fout.WriteLine((i + 1) + " " + x_node + " " + y_node + " " + z_node);
-                //}
-                //fout.WriteLine("$EndNodes");
-                //fout.WriteLine("$Elements");
-                //fout.WriteLine(elements);
-                int k = 0;
-                foreach (string fileName in SegmentedImagesList.Items)
-                {
-                    Mat img1 = new Mat(fileName);
-                    Mat hsv = new Mat(img1.Cols, img1.Rows, 8, 3);
-                    Cv2.CvtColor(img1, hsv, ColorConversionCodes.BGR2HSV);
-                    Mat[] splitedHsv = new Mat[3];
-                    Cv2.Split(hsv, out splitedHsv);
-                    height.Text = height.Text.Replace('.', ',');
-                    radius.Text = radius.Text.Replace('.', ',');
-                    float z_scan = (float)Convert.ToDouble(height.Text);
-                    float scan_radius = (float)Convert.ToDouble(radius.Text);
-                    bool TetrahedronsCreated = false;
-                    for (int i = 0; i < Elements; i++)
-                    {
-                        float h_centre = (float)CentreOfElement[i][2];
-                        float scan_pos = k * z_scan / SegmentedImagesList.Items.Count;
-                        if (Math.Abs(scan_pos - h_centre) < z_scan / SegmentedImagesList.Items.Count / 2)
-                        {
-                            if (ElementType[i] == 1)
-                            {
-                                byte[] Brightness = new byte[3];
-                                Brightness[0] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[i][0] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[i][0] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                                Brightness[1] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[i][1] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[i][1] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                                Brightness[2] = (byte)(splitedHsv[2].At<byte>((int)(CentreOfElement[i][0] / (scan_radius * 2) * img1.Cols), (int)(CentreOfElement[i][1] / (scan_radius * 2) * img1.Rows)));
-                                byte[] PhysicalGroups = new byte[3];
-                                for (int Group = 0; Group < 3; Group++)
-                                    PhysicalGroups[Group] = 0;
-                                for (int index = 0; index < 3; index++)
-                                {
-                                    if (Brightness[index] == 0)
-                                        PhysicalGroups[0]++;
-                                    if (Brightness[index] == 150)
-                                        PhysicalGroups[1]++;
-                                    if (Brightness[index] == 255)
-                                        PhysicalGroups[2]++;
-                                }
-                                if (PhysicalGroups[0] > PhysicalGroups[1] + PhysicalGroups[2])
-                                {
-                                    Tag[i] = 0;
-                                }
-                                else if (PhysicalGroups[1] > PhysicalGroups[0] + PhysicalGroups[2])
-                                {
-                                    Tag[i] = 1;
-                                }
-                                else
-                                {
-                                    Tag[i] = 4;
-                                }
-                                //else
-                                //{
-                                //    tag[i] = 5;
-                                //    borders++;
-                                //}
-                            }
-                            else if (ElementType[i] == 2)
-                            {
-                                byte[] Brightness = new byte[4];
-                                Brightness[0] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[i][0] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[i][0] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                                Brightness[1] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[i][1] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[i][1] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                                Brightness[2] = (byte)(splitedHsv[2].At<byte>((int)(CentreOfElement[i][0] / (scan_radius * 2) * img1.Cols), (int)(CentreOfElement[i][1] / (scan_radius * 2) * img1.Rows)));
-                                Brightness[3] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[i][2] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[i][2] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                                byte[] PhysicalGroups = new byte[3];
-                                for (int Group = 0; Group < 3; Group++)
-                                    PhysicalGroups[Group] = 0;
-                                for (int index = 0; index < 4; index++)
-                                {
-                                    if (Brightness[index] == 0)
-                                        PhysicalGroups[0]++;
-                                    if (Brightness[index] == 150)
-                                        PhysicalGroups[1]++;
-                                    if (Brightness[index] == 255)
-                                        PhysicalGroups[2]++;
-                                }
-                                if (PhysicalGroups[0] > PhysicalGroups[1] + PhysicalGroups[2])
-                                {
-                                    Tag[i] = 0;
-                                }
-                                else if (PhysicalGroups[1] > PhysicalGroups[0] + PhysicalGroups[2])
-                                {
-                                    Tag[i] = 1;
-                                }
-                                else
-                                {
-                                    Tag[i] = 4;
-                                }
-                                //else
-                                //{
-                                //    tag[i] = 5;
-                                //    borders++;
-                                //}
-                            }
-                            else if (ElementType[i] == 15)
-                            {
-                                int V = (int)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[i][0] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[i][0] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                                if (V == 0)
-                                {
-                                    Tag[i] = 0;
-                                }
-                                else if (V == 150)
-                                {
-                                    Tag[i] = 1;
-                                }
-                                else if (V == 255)
-                                {
-                                    Tag[i] = 4;
-                                }
-                                //else
-                                //{
-                                //    tag[i] = 5;
-                                //}
-                            }
-                            else if (ElementType[i] == 4)
-                            {
-                                byte[] Brightness = new byte[5];
-                                Brightness[0] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[i][0] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[i][0] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                                Brightness[1] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[i][1] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[i][1] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                                Brightness[2] = (byte)(splitedHsv[2].At<byte>((int)(CentreOfElement[i][0] / (scan_radius * 2) * img1.Cols), (int)(CentreOfElement[i][1] / (scan_radius * 2) * img1.Rows)));
-                                Brightness[3] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[i][2] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[i][2] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                                Brightness[4] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[i][3] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[i][3] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                                byte[] PhysicalGroups = new byte[3];
-                                for (int Group = 0; Group < 3; Group++)
-                                    PhysicalGroups[Group] = 0;
-                                for (int index = 0; index < 5; index++)
-                                {
-                                    if (Brightness[index] == 0)
-                                        PhysicalGroups[0]++;
-                                    if (Brightness[index] == 150)
-                                        PhysicalGroups[1]++;
-                                    if (Brightness[index] == 255)
-                                        PhysicalGroups[2]++;
-                                }
-                                if (PhysicalGroups[0] > PhysicalGroups[1] + PhysicalGroups[2])
-                                {
-                                    Tag[i] = 0;
-                                }
-                                else if (PhysicalGroups[1] > PhysicalGroups[0] + PhysicalGroups[2])
-                                {
-                                    Tag[i] = 1;
-                                }
-                                else
-                                {
-                                    Tag[i] = 4;
-                                }
-                            }
-                        }
-                    //            if (PhysicalGroups[0] == 5)
-                    //            {
-                    //                Tag[i] = 0;
-                    //            }
-                    //            else if (PhysicalGroups[1] == 5)
-                    //            {
-                    //                Tag[i] = 1;
-                    //            }
-                    //            else if (PhysicalGroups[2] == 5)
-                    //            {
-                    //                Tag[i] = 4;
-                    //            }
-                    //            else
-                    //            {
-                    //                NewTetrahedrons(i, ref NodeCoordinate, ref NodeOfElement, ref CentreOfElement, ref Tag, ref ElementType);
-                    //                TetrahedronsCreated = true;
-                    //            }
-                    //        }
-                    //    }
-                    //}
-                    //if (TetrahedronsCreated)
-                    //{
-                    //    for (int ElemIndex = Elements; ElemIndex < NodeOfElement.Count; ElemIndex++)
-                    //    {
-                    //        byte[] Brightness = new byte[5];
-                    //        Brightness[0] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[ElemIndex][0] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[ElemIndex][0] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                    //        Brightness[1] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[ElemIndex][1] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[ElemIndex][1] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                    //        Brightness[2] = (byte)(splitedHsv[2].At<byte>((int)(CentreOfElement[ElemIndex][0] / (scan_radius * 2) * img1.Cols), (int)(CentreOfElement[ElemIndex][1] / (scan_radius * 2) * img1.Rows)));
-                    //        Brightness[3] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[ElemIndex][2] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[ElemIndex][2] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                    //        Brightness[4] = (byte)(splitedHsv[2].At<byte>((int)(NodeCoordinate[NodeOfElement[ElemIndex][3] - 1][0] / (scan_radius * 2) * img1.Cols), (int)(NodeCoordinate[NodeOfElement[ElemIndex][3] - 1][1] / (scan_radius * 2) * img1.Rows)));
-                    //        byte[] PhysicalGroups = new byte[3];
-                    //        for (int Group = 0; Group < 3; Group++)
-                    //            PhysicalGroups[Group] = 0;
-                    //        for (int index = 0; index < 5; index++)
-                    //        {
-                    //            if (Brightness[index] == 0)
-                    //                PhysicalGroups[0]++;
-                    //            if (Brightness[index] == 150)
-                    //                PhysicalGroups[1]++;
-                    //            if (Brightness[index] == 255)
-                    //                PhysicalGroups[2]++;
-                    //        }
-                    //        if (PhysicalGroups[0] > PhysicalGroups[1] + PhysicalGroups[2])
-                    //        {
-                    //            Tag[ElemIndex] = 0;
-                    //        }
-                    //        else if (PhysicalGroups[1] > PhysicalGroups[0] + PhysicalGroups[2])
-                    //        {
-                    //            Tag[ElemIndex] = 1;
-                    //        }
-                    //        else
-                    //        {
-                    //            Tag[ElemIndex] = 4;
-                    //        }
-                    //    }
-                    //    Elements = NodeOfElement.Count();
-                    }
-                    k++;
-                }
-                Elements = NodeOfElement.Count();
-                fout.WriteLine("$MeshFormat");
-                fout.WriteLine("2.2 0 8");
-                fout.WriteLine("$EndMeshFormat");
-                fout.WriteLine("$Nodes");
-                fout.WriteLine(NodeCoordinate.Count);
-                for (int i = 0; i < NodeCoordinate.Count; i++)
-                {
-                    string x_node = Convert.ToString(NodeCoordinate[i][0]);
-                    string y_node = Convert.ToString(NodeCoordinate[i][1]);
-                    string z_node = Convert.ToString(NodeCoordinate[i][2]);
-                    x_node = x_node.Replace(',', '.');
-                    y_node = y_node.Replace(',', '.');
-                    z_node = z_node.Replace(',', '.');
-                    fout.WriteLine((i + 1) + " " + x_node + " " + y_node + " " + z_node);
-                }
-                fout.WriteLine("$EndNodes");
-                fout.WriteLine("$Elements");
-                fout.WriteLine(Elements);
-                for (int i = 0; i < NodeOfElement.Count; i++)
-                {
-                    if (ElementType[i] == 15)
-                    {
-                        fout.WriteLine((i + 1) + " " + ElementType[i] + " " + 2 + " " + Tag[i] + " " + Tag[i] + " " + NodeOfElement[i][0]);
-                    }
-                    else if (ElementType[i] == 1)
-                    {
-                        fout.WriteLine((i + 1) + " " + ElementType[i] + " " + 2 + " " + Tag[i] + " " + Tag[i] + " " + NodeOfElement[i][0] + " " + NodeOfElement[i][1]);
-                    }
-                    else if (ElementType[i] == 2)
-                    {
-                        fout.WriteLine((i + 1) + " " + ElementType[i] + " " + 2 + " " + Tag[i] + " " + Tag[i] + " " + NodeOfElement[i][0] + " " + NodeOfElement[i][1] + " " + NodeOfElement[i][2]);
-                    }
-                    else if (ElementType[i] == 4)
-                    {
-                        fout.WriteLine((i + 1) + " " + ElementType[i] + " " + 2 + " " + Tag[i] + " " + Tag[i] + " " + NodeOfElement[i][0] + " " + NodeOfElement[i][1] + " " + NodeOfElement[i][2] + " " + NodeOfElement[i][3]);
-                    }
-                }
-                fout.WriteLine("$EndElements");
-                fout.Close();
-                float border_percent = (float)borders * 100.0f / (float)Elements;
-                Console_block.Text += "\nNew mesh segmented\nBorders: " + border_percent + "%";
-                SegmentedMeshesList.Items.Add(meshes_path.Text + @"\resmesh" + ".msh");
-            }
-            catch (Exception e)
-            {
-                System.Windows.MessageBox.Show("Error! " + e.Message);
-            }
-        }
         private void convert_button_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 ParallelSegmentation();
                 ParallelFilter();
-                //filter();
-                //filter();
                 if (Cylinder.IsChecked == true)
-                    CylinderMeshCreating();
+                    CylinderGeoCreating();
                 else
-                    SquareGeoCreating();              
+                    CubeGeoCreating();              
             }
             catch (Exception e2)
             {
@@ -1438,7 +386,10 @@ namespace WpfApp
         }
         private void mesh_button_Click(object sender, RoutedEventArgs e)
         {
-            LayerMeshCreating();
+            Mesh mesh = new Mesh((string)MeshesList.Items[0]);
+            mesh.NodeTagsInitialising(SegmentedMeshesList, height.Text, radius.Text, SegmentedImagesList.Items.Count);
+            mesh.ElementTagsInitialising();
+            mesh.SaveMesh(meshes_path.Text);
         }        
         private void btnSaveGeo_Click(object sender, RoutedEventArgs e)
         {
